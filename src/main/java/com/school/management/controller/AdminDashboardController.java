@@ -1,7 +1,10 @@
 package com.school.management.controller;
 
+import com.school.management.domain.student.Gender;
 import com.school.management.domain.student.StudentStatus;
 import com.school.management.domain.teacher.TeacherStatus;
+import com.school.management.entity.StudentEntity;
+import com.school.management.repository.StudentRepository;
 import com.school.management.response.ApiResponse;
 import com.school.management.service.StudentService;
 import com.school.management.service.TeacherService;
@@ -24,6 +27,7 @@ public class AdminDashboardController {
 
     private final StudentService studentService;
     private final TeacherService teacherService;
+    private final StudentRepository studentRepository;
 
     @Getter
     public static class DashboardStats {
@@ -31,12 +35,19 @@ public class AdminDashboardController {
         private final long activeStudents;
         private final long totalTeachers;
         private final long activeTeachers;
+        private final long boys;
+        private final long girls;
+        private final long otherStudents;
 
-        DashboardStats(long totalStudents, long activeStudents, long totalTeachers, long activeTeachers) {
+        DashboardStats(long totalStudents, long activeStudents, long totalTeachers, long activeTeachers,
+                       long boys, long girls, long otherStudents) {
             this.totalStudents = totalStudents;
             this.activeStudents = activeStudents;
             this.totalTeachers = totalTeachers;
             this.activeTeachers = activeTeachers;
+            this.boys = boys;
+            this.girls = girls;
+            this.otherStudents = otherStudents;
         }
     }
 
@@ -55,8 +66,13 @@ public class AdminDashboardController {
                 + teacherService.countByStatus(TeacherStatus.RETIRED);
         long activeTeachers = teacherService.countByStatus(TeacherStatus.ACTIVE);
 
+        List<StudentEntity> allStudents = studentRepository.findAll();
+        long boys = allStudents.stream().filter(s -> s.getGender() == Gender.MALE).count();
+        long girls = allStudents.stream().filter(s -> s.getGender() == Gender.FEMALE).count();
+        long otherStudents = allStudents.size() - boys - girls;
+
         DashboardStats stats = new DashboardStats(
-                totalStudents, activeStudents, totalTeachers, activeTeachers);
+                totalStudents, activeStudents, totalTeachers, activeTeachers, boys, girls, otherStudents);
         return ResponseEntity.ok(ApiResponse.ok("Dashboard stats", stats));
     }
 }

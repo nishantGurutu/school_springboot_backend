@@ -57,6 +57,18 @@ public class SecurityConfig {
                         // Guardian / Parent management
                         .requestMatchers("/api/guardians/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "PARENT")
 
+                        // School operations modules
+                        .requestMatchers("/api/classes/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
+                        .requestMatchers("/api/exams/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
+                        .requestMatchers("/api/fees/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "PARENT")
+                        .requestMatchers("/api/attendance/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
+                        .requestMatchers("/api/leaves/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/certificates/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/library/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/notices/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
+                        .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
+
                         // User profile - any authenticated user
                         .requestMatchers("/api/profile/**").authenticated()
 
