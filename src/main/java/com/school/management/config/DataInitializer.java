@@ -5,10 +5,10 @@ import com.school.management.entity.UserEntity;
 import com.school.management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-@Configuration
+@Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
@@ -32,6 +32,10 @@ public class DataInitializer implements CommandLineRunner {
             System.out.println("  MASTER ADMIN CREATED");
             System.out.println("  Email: admin@school.com");
             System.out.println("  Password: admin123");
+            System.out.println("========================================");
+        } else {
+            System.out.println("========================================");
+            System.out.println("  MASTER ADMIN ALREADY EXISTS");
             System.out.println("========================================");
         }
     }
