@@ -56,6 +56,12 @@ public class AttendanceEntity {
     @Column(length = 255)
     private String avatar;
 
+    @Column(name = "check_in_time", length = 32)
+    private String checkInTime;
+
+    @Column(name = "check_out_time", length = 32)
+    private String checkOutTime;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

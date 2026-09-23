@@ -33,7 +33,7 @@ public class DatabaseSchemaFix {
             }
             jdbcTemplate.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
             jdbcTemplate.execute("ALTER TABLE users ADD CONSTRAINT users_role_check " +
-                    "CHECK (role IN ('MASTER_ADMIN', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT'))");
+                    "CHECK (role IN ('MASTER_ADMIN', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT', 'STAFF'))");
         };
     }
 }

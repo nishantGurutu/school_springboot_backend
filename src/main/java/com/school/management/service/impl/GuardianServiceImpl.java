@@ -63,10 +63,9 @@ public class GuardianServiceImpl implements GuardianService {
 
         GuardianEntity saved = guardianRepository.save(guardian);
 
-        // Optionally create a PARENT login account
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            createParentLogin(email, name, request.getPassword());
-        }
+        // Always create/sync PARENT login account
+        String pass = (request.getPassword() != null && !request.getPassword().isBlank()) ? request.getPassword() : "password";
+        createParentLogin(email, name, pass);
 
         return GuardianResponse.fromEntity(saved, resolveStudentName(saved.getStudentAdmissionNo()));
     }

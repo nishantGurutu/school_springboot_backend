@@ -1,12 +1,16 @@
 package com.school.management.service;
 
+import com.school.management.domain.user.Role;
 import com.school.management.dto.StaffRequest;
 import com.school.management.dto.StaffResponse;
 import com.school.management.entity.StaffEntity;
+import com.school.management.entity.UserEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.StaffRepository;
+import com.school.management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +21,8 @@ import java.util.List;
 public class StaffService {
 
     private final StaffRepository staffRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
     public List<StaffResponse> getAll() {
@@ -31,7 +37,20 @@ public class StaffService {
     @Transactional
     public StaffResponse create(StaffRequest request) {
         StaffEntity staff = mapToEntity(new StaffEntity(), request, true);
-        return StaffResponse.fromEntity(staffRepository.save(staff));
+        StaffEntity saved = staffRepository.save(staff);
+
+        // Auto-create/sync User account for mobile app login
+        if (saved.getEmail() != null && !saved.getEmail().isBlank() && !userRepository.existsByEmail(saved.getEmail())) {
+            userRepository.save(UserEntity.builder()
+                    .email(saved.getEmail())
+                    .password(passwordEncoder.encode("password"))
+                    .name(saved.getName())
+                    .role(Role.STAFF)
+                    .enabled(true)
+                    .build());
+        }
+
+        return StaffResponse.fromEntity(saved);
     }
 
     @Transactional

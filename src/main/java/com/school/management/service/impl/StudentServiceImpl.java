@@ -7,7 +7,11 @@ import com.school.management.entity.StudentEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
+import com.school.management.domain.user.Role;
+import com.school.management.entity.UserEntity;
 import com.school.management.repository.StudentRepository;
+import com.school.management.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import com.school.management.service.StudentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -32,6 +36,8 @@ public class StudentServiceImpl implements StudentService {
     private static final DateTimeFormatter FORMATTER_DMY_DASH = DateTimeFormatter.ofPattern("dd-MM-yyyy");
 
     private final StudentRepository studentRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
@@ -40,13 +46,28 @@ public class StudentServiceImpl implements StudentService {
             throw new DuplicateResourceException(
                     "Student with admission number '" + request.getAdmissionNo() + "' already exists");
         }
-        if (request.getEmail() != null && studentRepository.existsByEmail(request.getEmail())) {
+        if (request.getEmail() != null && !request.getEmail().isBlank() && studentRepository.existsByEmail(request.getEmail())) {
             throw new DuplicateResourceException(
                     "Student with email '" + request.getEmail() + "' already exists");
         }
 
         StudentEntity student = mapToEntity(new StudentEntity(), request, true);
-        return StudentResponse.fromEntity(studentRepository.save(student));
+        StudentEntity saved = studentRepository.save(student);
+
+        // Auto-create/sync User account for mobile app login
+        String userEmail = (saved.getEmail() != null && !saved.getEmail().isBlank()) 
+                ? saved.getEmail() : (saved.getAdmissionNo().toLowerCase() + "@schooldesk.com");
+        if (!userRepository.existsByEmail(userEmail)) {
+            userRepository.save(UserEntity.builder()
+                    .email(userEmail)
+                    .password(passwordEncoder.encode("password"))
+                    .name(saved.getName())
+                    .role(Role.STUDENT)
+                    .enabled(true)
+                    .build());
+        }
+
+        return StudentResponse.fromEntity(saved);
     }
 
     @Override

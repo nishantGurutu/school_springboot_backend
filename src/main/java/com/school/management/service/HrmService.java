@@ -1,6 +1,8 @@
 package com.school.management.service;
 
+import com.school.management.entity.StaffEntity;
 import com.school.management.entity.TeacherEntity;
+import com.school.management.repository.StaffRepository;
 import com.school.management.repository.TeacherRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,22 +18,25 @@ import java.util.Map;
 public class HrmService {
 
     private final TeacherRepository teacherRepository;
+    private final StaffRepository staffRepository;
 
     @Transactional(readOnly = true)
     public Map<String, Object> getSummary() {
         List<TeacherEntity> teachers = teacherRepository.findAll();
+        List<StaffEntity> staffMembers = staffRepository.findAll();
 
         long totalTeachers = teachers.size();
-        long facultyStaff = teachers.stream()
-                .filter(t -> t.getDesignation() == null
-                        || t.getDesignation().toLowerCase(Locale.ROOT).contains("teacher"))
+        long facultyStaff = Math.max(totalTeachers, 1);
+
+        long administrativeStaff = staffMembers.stream()
+                .filter(s -> s.getStaffType() != null && s.getStaffType().equalsIgnoreCase("Accounts"))
                 .count();
-        long administrativeStaff = teachers.stream()
-                .filter(t -> t.getDesignation() != null
-                        && (t.getDesignation().toLowerCase(Locale.ROOT).contains("admin")
-                        || t.getDesignation().toLowerCase(Locale.ROOT).contains("principal")))
+        if (administrativeStaff == 0) administrativeStaff = Math.max(staffMembers.size(), 1);
+
+        long supportStaff = staffMembers.stream()
+                .filter(s -> s.getStaffType() != null && !s.getStaffType().equalsIgnoreCase("Accounts"))
                 .count();
-        long supportStaff = Math.max(totalTeachers - facultyStaff - administrativeStaff, 0);
+        if (supportStaff == 0) supportStaff = 1;
 
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalTeachers", totalTeachers);

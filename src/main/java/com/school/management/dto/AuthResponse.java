@@ -21,6 +21,12 @@ public class AuthResponse {
     private String email;
     private String name;
     private Role role;
+    private String className;
+    private String details;
+    private String avatarUrl;
+    private Long entityId;
+    private String phone;
+    private String department;
 
     public static AuthResponse fromPair(JwtService.TokenPair pair, UserEntity user, String message) {
         return AuthResponse.builder()

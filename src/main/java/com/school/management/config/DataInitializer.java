@@ -17,26 +17,19 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        boolean adminExists = userRepository.existsByRole(Role.MASTER_ADMIN);
-
-        if (!adminExists) {
-            UserEntity master = UserEntity.builder()
+        // 1. Master Admin
+        if (!userRepository.existsByRole(Role.MASTER_ADMIN)) {
+            userRepository.save(UserEntity.builder()
                     .email("admin@school.com")
                     .password(passwordEncoder.encode("admin123"))
                     .name("System Admin")
                     .role(Role.MASTER_ADMIN)
-                    .build();
-
-            userRepository.save(master);
-            System.out.println("========================================");
-            System.out.println("  MASTER ADMIN CREATED");
-            System.out.println("  Email: admin@school.com");
-            System.out.println("  Password: admin123");
-            System.out.println("========================================");
-        } else {
-            System.out.println("========================================");
-            System.out.println("  MASTER ADMIN ALREADY EXISTS");
-            System.out.println("========================================");
+                    .build());
         }
+
+        System.out.println("========================================");
+        System.out.println("  MASTER ADMIN READY: admin@school.com / admin123");
+        System.out.println("========================================");
     }
 }
+

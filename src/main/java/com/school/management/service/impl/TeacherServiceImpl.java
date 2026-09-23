@@ -1,18 +1,22 @@
 package com.school.management.service.impl;
 
 import com.school.management.domain.teacher.TeacherStatus;
+import com.school.management.domain.user.Role;
 import com.school.management.dto.TeacherRequest;
 import com.school.management.dto.TeacherResponse;
 import com.school.management.entity.TeacherEntity;
+import com.school.management.entity.UserEntity;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.TeacherRepository;
+import com.school.management.repository.UserRepository;
 import com.school.management.service.TeacherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +27,8 @@ public class TeacherServiceImpl implements TeacherService {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final TeacherRepository teacherRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     @Override
     @Transactional
@@ -55,7 +61,20 @@ public class TeacherServiceImpl implements TeacherService {
                 .status(request.getStatus() == null ? TeacherStatus.ACTIVE : request.getStatus())
                 .build();
 
-        return TeacherResponse.fromEntity(teacherRepository.save(teacher));
+        TeacherEntity saved = teacherRepository.save(teacher);
+
+        // Auto-create/sync User account for mobile app login
+        if (!userRepository.existsByEmail(saved.getEmail())) {
+            userRepository.save(UserEntity.builder()
+                    .email(saved.getEmail())
+                    .password(passwordEncoder.encode("password"))
+                    .name(saved.getFirstName() + " " + saved.getLastName())
+                    .role(Role.TEACHER)
+                    .enabled(true)
+                    .build());
+        }
+
+        return TeacherResponse.fromEntity(saved);
     }
 
     @Override
