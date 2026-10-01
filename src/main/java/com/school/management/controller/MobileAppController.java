@@ -16,6 +16,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.school.management.entity.AttendanceEntity;
+import com.school.management.entity.HolidayEntity;
+import com.school.management.dto.HolidayResponse;
+import com.school.management.service.HolidayService;
 
 @RestController
 @RequestMapping("/api/mobile")
@@ -29,6 +32,8 @@ public class MobileAppController {
     private final TeacherRepository teacherRepository;
     private final StaffRepository staffRepository;
     private final AttendanceRepository attendanceRepository;
+    private final HolidayRepository holidayRepository;
+    private final HolidayService holidayService;
 
     // In-memory persistent stores for interactive mobile app features
     private static final Map<String, List<Map<String, Object>>> homeworkSubmissions = new ConcurrentHashMap<>();
@@ -104,6 +109,12 @@ public class MobileAppController {
         return ResponseEntity.ok(profile);
     }
 
+    @GetMapping("/holidays")
+    @Operation(summary = "Get school holidays for mobile app")
+    public ResponseEntity<List<HolidayResponse>> getMobileHolidays() {
+        return ResponseEntity.ok(holidayService.getAll());
+    }
+
     @GetMapping("/attendance")
     @Operation(summary = "Get attendance records with optional role/date/className filters")
     public ResponseEntity<List<Map<String, Object>>> getAttendance(
@@ -160,9 +171,6 @@ public class MobileAppController {
                 if (d.getDayOfWeek().getValue() == 7) {
                     rec.put("status", "holiday");
                     rec.put("notes", "Sunday");
-                } else if (day == 15) {
-                    rec.put("status", "holiday");
-                    rec.put("notes", "Mid Term Break");
                 } else if (day == 8 || day == 22) {
                     rec.put("status", "absent");
                     rec.put("notes", "Medical Leave");
@@ -172,19 +180,71 @@ public class MobileAppController {
                 result.add(rec);
             }
         }
+
+        // Overlay all official school holidays from database
+        try {
+            List<HolidayEntity> holidays = holidayRepository.findAllByOrderByDateAsc();
+            for (HolidayEntity holiday : holidays) {
+                String hDate = holiday.getDate();
+                String hTitle = holiday.getTitle();
+
+                // Check single date or date range
+                LocalDate startD = LocalDate.parse(hDate);
+                LocalDate endD = (holiday.getEndDate() != null && !holiday.getEndDate().isBlank()) 
+                        ? LocalDate.parse(holiday.getEndDate()) : startD;
+
+                LocalDate cur = startD;
+                while (!cur.isAfter(endD)) {
+                    String curStr = cur.toString();
+                    boolean exists = false;
+                    for (Map<String, Object> r : result) {
+                        if (curStr.equals(String.valueOf(r.get("date")))) {
+                            r.put("status", "holiday");
+                            r.put("notes", hTitle);
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        Map<String, Object> hRec = new HashMap<>();
+                        hRec.put("id", -holiday.getId());
+                        hRec.put("date", curStr);
+                        hRec.put("status", "holiday");
+                        hRec.put("notes", hTitle);
+                        hRec.put("name", "School Holiday");
+                        hRec.put("attendanceType", type != null ? type : "student");
+                        result.add(hRec);
+                    }
+                    cur = cur.plusDays(1);
+                }
+            }
+        } catch (Exception ignored) {}
+
         return ResponseEntity.ok(result);
     }
 
     @PostMapping("/attendance/mark")
     @Operation(summary = "Mark attendance for Student, Teacher, or Staff")
     public ResponseEntity<Map<String, Object>> markAttendance(@RequestBody Map<String, Object> req) {
+        String date = req.getOrDefault("date", req.getOrDefault("attendanceDate", LocalDate.now().toString())).toString();
+
+        // Prevent attendance on school holidays
+        if (holidayService.isHoliday(date)) {
+            Optional<HolidayEntity> holidayOpt = holidayService.getHolidayForDate(date);
+            String hTitle = holidayOpt.map(HolidayEntity::getTitle).orElse("School Holiday");
+            Map<String, Object> errResponse = new HashMap<>();
+            errResponse.put("error", "Cannot mark attendance: " + date + " is an official school holiday (" + hTitle + ").");
+            errResponse.put("isHoliday", true);
+            errResponse.put("holiday", hTitle);
+            return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(errResponse);
+        }
+
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
         String name = req.containsKey("name") && req.get("name") != null && !req.get("name").toString().isEmpty()
                 ? req.get("name").toString()
                 : (user != null ? user.getName() : "School Member");
 
         String type = req.getOrDefault("attendanceType", req.getOrDefault("type", "student")).toString().toLowerCase();
-        String date = req.getOrDefault("date", req.getOrDefault("attendanceDate", LocalDate.now().toString())).toString();
         String status = req.getOrDefault("status", "present").toString().toLowerCase();
         String notes = req.getOrDefault("notes", req.getOrDefault("note", "Marked via Mobile App")).toString();
         String className = req.getOrDefault("className", "Class 10-A").toString();
