@@ -10,6 +10,7 @@ public class SchoolClassResponse {
 
     private Long id;
     private String name;
+    private Long sectionId;
     private String section;
     private String status;
 
@@ -17,6 +18,7 @@ public class SchoolClassResponse {
         return SchoolClassResponse.builder()
                 .id(entity.getId())
                 .name(entity.getName())
+                .sectionId(entity.getSectionId())
                 .section(entity.getSection())
                 .status(entity.getStatus())
                 .build();

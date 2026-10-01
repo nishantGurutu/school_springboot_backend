@@ -3,10 +3,12 @@ package com.school.management.service;
 import com.school.management.dto.SchoolClassRequest;
 import com.school.management.dto.SchoolClassResponse;
 import com.school.management.entity.SchoolClassEntity;
+import com.school.management.entity.SectionEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.SchoolClassRepository;
+import com.school.management.repository.SectionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,7 @@ import java.util.List;
 public class SchoolClassService {
 
     private final SchoolClassRepository schoolClassRepository;
+    private final SectionRepository sectionRepository;
 
     @Transactional(readOnly = true)
     public List<SchoolClassResponse> getAll() {
@@ -27,28 +30,82 @@ public class SchoolClassService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public SchoolClassResponse getById(Long id) {
+        return SchoolClassResponse.fromEntity(findByIdOrThrow(id));
+    }
+
     public SchoolClassResponse create(SchoolClassRequest request) {
-        String name = requireNonBlank(request.getName(), "Name is required");
-        if (schoolClassRepository.existsByName(name.trim())) {
-            throw new DuplicateResourceException(
-                    "Class with name '" + name + "' already exists");
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        Long sectionId = request.getSectionId();
+        String sectionName = request.getSection() != null ? request.getSection().trim() : null;
+
+        if (sectionId != null) {
+            SectionEntity sec = sectionRepository.findById(sectionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Section not found with id: " + sectionId));
+            sectionName = sec.getName();
+            if (schoolClassRepository.existsByNameAndSectionId(name, sectionId)) {
+                throw new DuplicateResourceException(
+                        "Class '" + name + "' with Section '" + sectionName + "' already exists");
+            }
+        } else if (sectionName != null && !sectionName.isBlank()) {
+            if (schoolClassRepository.existsByNameAndSection(name, sectionName)) {
+                throw new DuplicateResourceException(
+                        "Class '" + name + "' with Section '" + sectionName + "' already exists");
+            }
+        } else {
+            if (schoolClassRepository.existsByName(name)) {
+                throw new DuplicateResourceException(
+                        "Class with name '" + name + "' already exists");
+            }
         }
+
+        String status = (request.getStatus() == null || request.getStatus().isBlank()) ? "Active" : request.getStatus().trim();
+
         SchoolClassEntity entity = SchoolClassEntity.builder()
-                .name(name.trim())
-                .section(request.getSection() == null ? null : request.getSection().trim())
+                .name(name)
+                .sectionId(sectionId)
+                .section(sectionName)
+                .status(status)
                 .build();
         return SchoolClassResponse.fromEntity(schoolClassRepository.save(entity));
     }
 
     public SchoolClassResponse update(Long id, SchoolClassRequest request) {
         SchoolClassEntity entity = findByIdOrThrow(id);
-        String name = requireNonBlank(request.getName(), "Name is required");
-        if (!entity.getName().equals(name.trim()) && schoolClassRepository.existsByName(name.trim())) {
-            throw new DuplicateResourceException(
-                    "Class with name '" + name + "' already exists");
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        Long sectionId = request.getSectionId();
+        String sectionName = request.getSection() != null ? request.getSection().trim() : null;
+
+        if (sectionId != null) {
+            SectionEntity sec = sectionRepository.findById(sectionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Section not found with id: " + sectionId));
+            sectionName = sec.getName();
+            var existing = schoolClassRepository.findByNameAndSectionId(name, sectionId);
+            if (existing.isPresent() && !existing.get().getId().equals(id)) {
+                throw new DuplicateResourceException(
+                        "Class '" + name + "' with Section '" + sectionName + "' already exists");
+            }
+        } else if (sectionName != null && !sectionName.isBlank()) {
+            var existing = schoolClassRepository.findByNameAndSection(name, sectionName);
+            if (existing.isPresent() && !existing.get().getId().equals(id)) {
+                throw new DuplicateResourceException(
+                        "Class '" + name + "' with Section '" + sectionName + "' already exists");
+            }
+        } else {
+            if (!entity.getName().equalsIgnoreCase(name) && schoolClassRepository.existsByName(name)) {
+                throw new DuplicateResourceException(
+                        "Class with name '" + name + "' already exists");
+            }
         }
-        entity.setName(name.trim());
-        entity.setSection(request.getSection() == null ? null : request.getSection().trim());
+
+        entity.setName(name);
+        entity.setSectionId(sectionId);
+        entity.setSection(sectionName);
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            entity.setStatus(request.getStatus().trim());
+        }
+
         return SchoolClassResponse.fromEntity(schoolClassRepository.save(entity));
     }
 

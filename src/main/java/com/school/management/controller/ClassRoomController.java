@@ -27,6 +27,12 @@ public class ClassRoomController {
         return ResponseEntity.ok(classRoomService.getAll());
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Get room by id")
+    public ResponseEntity<ClassRoomResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(classRoomService.getById(id));
+    }
+
     @PostMapping
     @Operation(summary = "Create a new room")
     public ResponseEntity<ClassRoomResponse> create(@Valid @RequestBody ClassRoomRequest request) {

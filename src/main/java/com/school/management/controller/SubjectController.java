@@ -27,6 +27,12 @@ public class SubjectController {
         return ResponseEntity.ok(subjectService.getAll());
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Get subject by id")
+    public ResponseEntity<SubjectResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(subjectService.getById(id));
+    }
+
     @PostMapping
     @Operation(summary = "Create a new subject")
     public ResponseEntity<SubjectResponse> create(@Valid @RequestBody SubjectRequest request) {

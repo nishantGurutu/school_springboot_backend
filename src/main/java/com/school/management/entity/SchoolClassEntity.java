@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "school_classes", indexes = {
         @Index(name = "idx_school_class_name", columnList = "name"),
+        @Index(name = "idx_school_class_section_id", columnList = "section_id"),
         @Index(name = "idx_school_class_status", columnList = "status")
 })
 @Getter
@@ -23,6 +24,9 @@ public class SchoolClassEntity {
 
     @Column(nullable = false)
     private String name;
+
+    @Column(name = "section_id")
+    private Long sectionId;
 
     private String section;
 

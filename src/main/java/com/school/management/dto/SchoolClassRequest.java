@@ -9,5 +9,9 @@ public class SchoolClassRequest {
     @NotBlank(message = "Name is required")
     private String name;
 
+    private Long sectionId;
+
     private String section;
+
+    private String status;
 }

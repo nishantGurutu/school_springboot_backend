@@ -27,6 +27,12 @@ public class SchoolClassController {
         return ResponseEntity.ok(schoolClassService.getAll());
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Get class by id")
+    public ResponseEntity<SchoolClassResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(schoolClassService.getById(id));
+    }
+
     @PostMapping
     @Operation(summary = "Create a new class")
     public ResponseEntity<SchoolClassResponse> create(@Valid @RequestBody SchoolClassRequest request) {

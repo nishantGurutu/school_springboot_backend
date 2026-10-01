@@ -27,26 +27,36 @@ public class SectionService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public SectionResponse getById(Long id) {
+        return SectionResponse.fromEntity(findByIdOrThrow(id));
+    }
+
     public SectionResponse create(SectionRequest request) {
-        String name = requireNonBlank(request.getName(), "Name is required");
-        if (sectionRepository.existsByName(name.trim())) {
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        if (sectionRepository.existsByName(name)) {
             throw new DuplicateResourceException(
                     "Section with name '" + name + "' already exists");
         }
+        String status = (request.getStatus() == null || request.getStatus().isBlank()) ? "Active" : request.getStatus().trim();
         SectionEntity entity = SectionEntity.builder()
-                .name(name.trim())
+                .name(name)
+                .status(status)
                 .build();
         return SectionResponse.fromEntity(sectionRepository.save(entity));
     }
 
     public SectionResponse update(Long id, SectionRequest request) {
         SectionEntity entity = findByIdOrThrow(id);
-        String name = requireNonBlank(request.getName(), "Name is required");
-        if (!entity.getName().equals(name.trim()) && sectionRepository.existsByName(name.trim())) {
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        if (!entity.getName().equalsIgnoreCase(name) && sectionRepository.existsByName(name)) {
             throw new DuplicateResourceException(
                     "Section with name '" + name + "' already exists");
         }
-        entity.setName(name.trim());
+        entity.setName(name);
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            entity.setStatus(request.getStatus().trim());
+        }
         return SectionResponse.fromEntity(sectionRepository.save(entity));
     }
 

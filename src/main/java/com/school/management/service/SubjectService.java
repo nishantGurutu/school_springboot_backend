@@ -27,30 +27,40 @@ public class SubjectService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public SubjectResponse getById(Long id) {
+        return SubjectResponse.fromEntity(findByIdOrThrow(id));
+    }
+
     public SubjectResponse create(SubjectRequest request) {
-        String name = requireNonBlank(request.getName(), "Name is required");
-        String code = requireNonBlank(request.getCode(), "Code is required");
-        if (subjectRepository.existsByCode(code.trim())) {
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        String code = requireNonBlank(request.getCode(), "Code is required").trim();
+        if (subjectRepository.existsByCode(code)) {
             throw new DuplicateResourceException(
                     "Subject with code '" + code + "' already exists");
         }
+        String status = (request.getStatus() == null || request.getStatus().isBlank()) ? "Active" : request.getStatus().trim();
         SubjectEntity entity = SubjectEntity.builder()
-                .name(name.trim())
-                .code(code.trim())
+                .name(name)
+                .code(code)
+                .status(status)
                 .build();
         return SubjectResponse.fromEntity(subjectRepository.save(entity));
     }
 
     public SubjectResponse update(Long id, SubjectRequest request) {
         SubjectEntity entity = findByIdOrThrow(id);
-        String name = requireNonBlank(request.getName(), "Name is required");
-        String code = requireNonBlank(request.getCode(), "Code is required");
-        if (!entity.getCode().equals(code.trim()) && subjectRepository.existsByCode(code.trim())) {
+        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        String code = requireNonBlank(request.getCode(), "Code is required").trim();
+        if (!entity.getCode().equalsIgnoreCase(code) && subjectRepository.existsByCode(code)) {
             throw new DuplicateResourceException(
                     "Subject with code '" + code + "' already exists");
         }
-        entity.setName(name.trim());
-        entity.setCode(code.trim());
+        entity.setName(name);
+        entity.setCode(code);
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            entity.setStatus(request.getStatus().trim());
+        }
         return SubjectResponse.fromEntity(subjectRepository.save(entity));
     }
 

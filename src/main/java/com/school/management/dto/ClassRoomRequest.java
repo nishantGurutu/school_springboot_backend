@@ -10,4 +10,6 @@ public class ClassRoomRequest {
     private String room;
 
     private String capacity;
+
+    private String status;
 }

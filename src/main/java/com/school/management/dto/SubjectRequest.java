@@ -11,4 +11,6 @@ public class SubjectRequest {
 
     @NotBlank(message = "Code is required")
     private String code;
+
+    private String status;
 }

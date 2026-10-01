@@ -8,4 +8,6 @@ public class SectionRequest {
 
     @NotBlank(message = "Name is required")
     private String name;
+
+    private String status;
 }

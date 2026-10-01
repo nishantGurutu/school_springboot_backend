@@ -27,6 +27,12 @@ public class SectionController {
         return ResponseEntity.ok(sectionService.getAll());
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "Get section by id")
+    public ResponseEntity<SectionResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(sectionService.getById(id));
+    }
+
     @PostMapping
     @Operation(summary = "Create a new section")
     public ResponseEntity<SectionResponse> create(@Valid @RequestBody SectionRequest request) {
