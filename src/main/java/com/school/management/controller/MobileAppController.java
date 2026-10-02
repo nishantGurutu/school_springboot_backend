@@ -15,8 +15,7 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.school.management.entity.AttendanceEntity;
-import com.school.management.entity.HolidayEntity;
+import com.school.management.entity.*;
 import com.school.management.dto.HolidayResponse;
 import com.school.management.service.HolidayService;
 
@@ -128,23 +127,50 @@ public class MobileAppController {
         try {
             List<AttendanceEntity> dbEntities;
             if (type != null && date != null) {
-                dbEntities = attendanceRepository.findByAttendanceTypeAndAttendanceDate(type, date);
+                dbEntities = attendanceRepository.findByAttendanceTypeAndAttendanceDate(type.toUpperCase(), date);
+                if (dbEntities.isEmpty()) {
+                    dbEntities = attendanceRepository.findByAttendanceTypeAndAttendanceDate(type.toLowerCase(), date);
+                }
             } else if (type != null) {
-                dbEntities = attendanceRepository.findByAttendanceType(type);
+                dbEntities = attendanceRepository.findByAttendanceType(type.toUpperCase());
+                if (dbEntities.isEmpty()) {
+                    dbEntities = attendanceRepository.findByAttendanceType(type.toLowerCase());
+                }
             } else {
                 dbEntities = attendanceRepository.findAll();
             }
 
             for (AttendanceEntity entity : dbEntities) {
+                // Check if duplicate already exists in customAttendance
+                String entityDate = entity.getAttendanceDate() != null ? entity.getAttendanceDate() : LocalDate.now().toString();
+                String entityAdm = entity.getAdmissionNo();
+                String entityName = entity.getName();
+                Long entityId = entity.getId();
+
+                result.removeIf(r -> {
+                    Object rId = r.get("id");
+                    if (entityId != null && rId != null && entityId.toString().equals(rId.toString())) {
+                        return true;
+                    }
+                    String rDate = String.valueOf(r.get("date"));
+                    String rAdm = r.get("admissionNo") != null ? String.valueOf(r.get("admissionNo")) : null;
+                    String rName = r.get("name") != null ? String.valueOf(r.get("name")) : null;
+                    return entityDate.equals(rDate) && (
+                        (entityAdm != null && entityAdm.equalsIgnoreCase(rAdm)) ||
+                        (entityName != null && entityName.equalsIgnoreCase(rName))
+                    );
+                });
+
                 Map<String, Object> rec = new HashMap<>();
                 rec.put("id", entity.getId());
                 rec.put("attendanceType", entity.getAttendanceType());
+                rec.put("admissionNo", entity.getAdmissionNo());
                 rec.put("name", entity.getName());
                 rec.put("rollNo", entity.getRollNo());
                 rec.put("className", entity.getClassName());
                 rec.put("department", entity.getDepartment());
                 rec.put("designation", entity.getDesignation());
-                rec.put("date", entity.getAttendanceDate() != null ? entity.getAttendanceDate() : LocalDate.now().toString());
+                rec.put("date", entityDate);
                 rec.put("status", entity.getStatus() != null ? entity.getStatus().toLowerCase() : "present");
                 rec.put("notes", entity.getNote());
                 rec.put("checkInTime", entity.getCheckInTime());
@@ -244,49 +270,175 @@ public class MobileAppController {
                 ? req.get("name").toString()
                 : (user != null ? user.getName() : "School Member");
 
-        String type = req.getOrDefault("attendanceType", req.getOrDefault("type", "student")).toString().toLowerCase();
+        String rawType = req.getOrDefault("attendanceType", req.getOrDefault("type", req.getOrDefault("role", "student"))).toString().trim();
+        String normalizedType = "STUDENT";
+        if (user != null && user.getRole() == Role.TEACHER) {
+            normalizedType = "TEACHER";
+        } else if (user != null && user.getRole() == Role.STUDENT) {
+            normalizedType = "STUDENT";
+        } else if (user != null && user.getRole() == Role.STAFF) {
+            normalizedType = "EMPLOYEE";
+        } else if ("teacher".equalsIgnoreCase(rawType)) {
+            normalizedType = "TEACHER";
+        } else if ("staff".equalsIgnoreCase(rawType) || "employee".equalsIgnoreCase(rawType)) {
+            normalizedType = "EMPLOYEE";
+        }
+
         String status = req.getOrDefault("status", "present").toString().toLowerCase();
         String notes = req.getOrDefault("notes", req.getOrDefault("note", "Marked via Mobile App")).toString();
         String className = req.getOrDefault("className", "Class 10-A").toString();
         String department = req.getOrDefault("department", "General").toString();
+        String designation = req.getOrDefault("designation", "").toString();
         String rollNo = req.getOrDefault("rollNo", req.getOrDefault("admissionNo", "24")).toString();
 
         String checkInTime = req.containsKey("checkInTime") && req.get("checkInTime") != null ? req.get("checkInTime").toString() : null;
         String checkOutTime = req.containsKey("checkOutTime") && req.get("checkOutTime") != null ? req.get("checkOutTime").toString() : null;
 
-        Map<String, Object> record = new HashMap<>();
-        record.put("id", System.currentTimeMillis());
-        record.put("attendanceType", type);
-        record.put("name", name);
-        record.put("rollNo", rollNo);
-        record.put("className", className);
-        record.put("department", department);
-        record.put("date", date);
-        record.put("status", status);
-        record.put("notes", notes);
-        record.put("checkInTime", checkInTime);
-        record.put("checkOutTime", checkOutTime);
-        record.put("markedBy", user != null ? user.getName() : "Self");
+        String admissionNo = req.containsKey("admissionNo") && req.get("admissionNo") != null && !req.get("admissionNo").toString().isBlank()
+                ? req.get("admissionNo").toString().trim()
+                : null;
+        String avatar = req.containsKey("avatar") && req.get("avatar") != null ? req.get("avatar").toString() : null;
 
-        // Save to in-memory list
-        customAttendance.add(0, record);
+        // Auto-fetch profile details for Student, Teacher, or Staff based on role
+        if (user != null && user.getRole() == Role.STUDENT) {
+            Optional<StudentEntity> studentOpt = studentRepository.findByEmail(user.getEmail());
+            if (studentOpt.isPresent()) {
+                StudentEntity s = studentOpt.get();
+                if (admissionNo == null || admissionNo.isBlank()) {
+                    admissionNo = s.getAdmissionNo() != null ? s.getAdmissionNo() : "ADM-" + s.getRollNo();
+                }
+                if (rollNo.equals("24") && s.getRollNo() != null) {
+                    rollNo = s.getRollNo();
+                }
+                if (className.equals("Class 10-A") && s.getClassName() != null) {
+                    className = s.getClassName();
+                }
+                if (avatar == null) {
+                    avatar = s.getStudentPhoto();
+                }
+                if (name.equals("School Member") || name.equals(user.getName())) {
+                    name = s.getName() != null ? s.getName() : name;
+                }
+            }
+        } else if (user != null && user.getRole() == Role.TEACHER) {
+            Optional<TeacherEntity> teacherOpt = teacherRepository.findByEmail(user.getEmail());
+            if (teacherOpt.isPresent()) {
+                TeacherEntity t = teacherOpt.get();
+                if (admissionNo == null || admissionNo.isBlank()) {
+                    admissionNo = t.getEmployeeId() != null ? t.getEmployeeId() : "EMP-T-" + t.getId();
+                }
+                rollNo = t.getEmployeeId() != null ? t.getEmployeeId() : "T-" + t.getId();
+                className = t.getSubject() != null ? t.getSubject() : "Mathematics";
+                department = t.getDepartment() != null ? t.getDepartment() : "Academics";
+                designation = t.getDesignation() != null ? t.getDesignation() : "Teacher";
+                if (avatar == null) {
+                    avatar = t.getAvatar();
+                }
+                String fullName = (t.getFirstName() != null ? t.getFirstName() : "") + " " + (t.getLastName() != null ? t.getLastName() : "");
+                if (!fullName.trim().isEmpty()) {
+                    name = fullName.trim();
+                }
+            }
+        } else if (user != null && user.getRole() == Role.STAFF) {
+            Optional<StaffEntity> staffOpt = staffRepository.findByEmail(user.getEmail());
+            if (staffOpt.isPresent()) {
+                StaffEntity st = staffOpt.get();
+                if (admissionNo == null || admissionNo.isBlank()) {
+                    admissionNo = "STAFF-" + st.getId();
+                }
+                rollNo = "S-" + st.getId();
+                department = st.getStaffType() != null ? st.getStaffType() : "Administration";
+                designation = st.getDesignation() != null ? st.getDesignation() : "Staff Member";
+                if (avatar == null) {
+                    avatar = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150";
+                }
+                if (name.equals("School Member") || name.equals(user.getName())) {
+                    name = st.getName() != null ? st.getName() : name;
+                }
+            }
+        }
 
-        // Save to DB AttendanceEntity
+        if (admissionNo == null || admissionNo.isBlank()) {
+            admissionNo = "ADM-" + rollNo;
+        }
+
+        // Check if an existing attendance record exists in DB for this person on this date
+        AttendanceEntity entityToSave = null;
         try {
-            AttendanceEntity entity = AttendanceEntity.builder()
-                    .attendanceType(type)
+            List<AttendanceEntity> existingToday = attendanceRepository.findByAttendanceTypeAndAttendanceDate(normalizedType, date);
+            if (existingToday.isEmpty()) {
+                existingToday = attendanceRepository.findByAttendanceTypeAndAttendanceDate(normalizedType.toLowerCase(), date);
+            }
+            for (AttendanceEntity existing : existingToday) {
+                boolean matches = (admissionNo.equalsIgnoreCase(existing.getAdmissionNo()))
+                        || (name.equalsIgnoreCase(existing.getName()));
+                if (matches) {
+                    entityToSave = existing;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
+
+        if (entityToSave == null) {
+            entityToSave = AttendanceEntity.builder()
+                    .attendanceType(normalizedType)
+                    .admissionNo(admissionNo)
                     .name(name)
                     .rollNo(rollNo)
                     .className(className)
                     .department(department)
+                    .designation(designation)
                     .attendanceDate(date)
                     .status(status)
                     .note(notes)
+                    .avatar(avatar)
                     .checkInTime(checkInTime)
                     .checkOutTime(checkOutTime)
                     .build();
-            attendanceRepository.save(entity);
+        } else {
+            // Update existing entity for today (e.g. check-out after check-in)
+            entityToSave.setAttendanceType(normalizedType);
+            entityToSave.setAdmissionNo(admissionNo);
+            entityToSave.setName(name);
+            entityToSave.setRollNo(rollNo);
+            entityToSave.setClassName(className);
+            entityToSave.setDepartment(department);
+            if (!designation.isBlank()) entityToSave.setDesignation(designation);
+            if (checkInTime != null) entityToSave.setCheckInTime(checkInTime);
+            if (checkOutTime != null) entityToSave.setCheckOutTime(checkOutTime);
+            if (status != null) entityToSave.setStatus(status);
+            if (notes != null) entityToSave.setNote(notes);
+            if (avatar != null) entityToSave.setAvatar(avatar);
+        }
+
+        try {
+            entityToSave = attendanceRepository.save(entityToSave);
         } catch (Exception ignored) {}
+
+        Map<String, Object> record = new HashMap<>();
+        record.put("id", entityToSave != null && entityToSave.getId() != null ? entityToSave.getId() : System.currentTimeMillis());
+        record.put("attendanceType", normalizedType.toLowerCase());
+        record.put("admissionNo", admissionNo);
+        record.put("name", name);
+        record.put("rollNo", rollNo);
+        record.put("className", className);
+        record.put("department", department);
+        record.put("designation", designation);
+        record.put("date", date);
+        record.put("status", status);
+        record.put("notes", notes);
+        record.put("avatar", avatar);
+        record.put("checkInTime", entityToSave != null ? entityToSave.getCheckInTime() : checkInTime);
+        record.put("checkOutTime", entityToSave != null ? entityToSave.getCheckOutTime() : checkOutTime);
+        record.put("markedBy", user != null ? user.getName() : "Self");
+
+        // Sync with in-memory list (update existing or add new)
+        final String matchAdm = admissionNo;
+        final String matchName = name;
+        customAttendance.removeIf(r -> date.equals(String.valueOf(r.get("date"))) &&
+                ((matchAdm != null && matchAdm.equalsIgnoreCase(String.valueOf(r.get("admissionNo"))))
+                 || (matchName != null && matchName.equalsIgnoreCase(String.valueOf(r.get("name"))))));
+        customAttendance.add(0, record);
 
         return ResponseEntity.ok(record);
     }

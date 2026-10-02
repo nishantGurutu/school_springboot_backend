@@ -22,6 +22,8 @@ public class AttendanceResponse {
     private String status;
     private String note;
     private String avatar;
+    private String checkInTime;
+    private String checkOutTime;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -39,6 +41,8 @@ public class AttendanceResponse {
                 .status(entity.getStatus())
                 .note(entity.getNote())
                 .avatar(entity.getAvatar())
+                .checkInTime(entity.getCheckInTime())
+                .checkOutTime(entity.getCheckOutTime())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .build();

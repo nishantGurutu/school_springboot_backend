@@ -41,4 +41,10 @@ public class AttendanceRequest {
 
     @Size(max = 255, message = "Avatar URL must be at most 255 characters")
     private String avatar;
+
+    @Size(max = 32, message = "Check-in time must be at most 32 characters")
+    private String checkInTime;
+
+    @Size(max = 32, message = "Check-out time must be at most 32 characters")
+    private String checkOutTime;
 }

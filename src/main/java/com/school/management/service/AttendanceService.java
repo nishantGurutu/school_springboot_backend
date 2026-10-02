@@ -65,6 +65,8 @@ public class AttendanceService {
                 .status(request.getStatus() == null ? null : request.getStatus().trim())
                 .note(request.getNote() == null ? null : request.getNote().trim())
                 .avatar(request.getAvatar())
+                .checkInTime(request.getCheckInTime() == null ? null : request.getCheckInTime().trim())
+                .checkOutTime(request.getCheckOutTime() == null ? null : request.getCheckOutTime().trim())
                 .build();
 
         return AttendanceResponse.fromEntity(attendanceRepository.save(entity));
@@ -87,6 +89,8 @@ public class AttendanceService {
         entity.setStatus(request.getStatus() == null ? entity.getStatus() : request.getStatus().trim());
         entity.setNote(request.getNote() == null ? entity.getNote() : request.getNote().trim());
         entity.setAvatar(request.getAvatar() == null ? entity.getAvatar() : request.getAvatar());
+        if (request.getCheckInTime() != null) entity.setCheckInTime(request.getCheckInTime().trim());
+        if (request.getCheckOutTime() != null) entity.setCheckOutTime(request.getCheckOutTime().trim());
 
         return AttendanceResponse.fromEntity(attendanceRepository.save(entity));
     }
