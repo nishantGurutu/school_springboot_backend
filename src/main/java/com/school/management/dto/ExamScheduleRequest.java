@@ -6,8 +6,11 @@ import lombok.Data;
 @Data
 public class ExamScheduleRequest {
 
-    @NotBlank(message = "Class name is required")
+    private String examName;
+
     private String className;
+
+    private String section;
 
     @NotBlank(message = "Subject is required")
     private String subject;

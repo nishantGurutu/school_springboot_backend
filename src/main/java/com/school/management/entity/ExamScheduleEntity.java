@@ -21,8 +21,12 @@ public class ExamScheduleEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String examName;
+
     @Column(nullable = false)
     private String className;
+
+    private String section;
 
     @Column(nullable = false)
     private String subject;

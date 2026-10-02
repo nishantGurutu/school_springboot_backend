@@ -28,15 +28,18 @@ public class ExamScheduleService {
     }
 
     public ExamScheduleResponse create(ExamScheduleRequest request) {
-        String className = requireNonBlank(request.getClassName(), "Class name is required");
-        String subject = requireNonBlank(request.getSubject(), "Subject is required");
-        if (examScheduleRepository.existsByClassNameAndSubject(className.trim(), subject.trim())) {
-            throw new DuplicateResourceException(
-                    "Schedule for class '" + className + "' and subject '" + subject + "' already exists");
-        }
+        String examName = request.getExamName() != null ? request.getExamName().trim() : null;
+        String className = (request.getClassName() != null && !request.getClassName().isBlank())
+                ? request.getClassName().trim()
+                : (examName != null ? examName : "Class 1");
+        String section = request.getSection() != null ? request.getSection().trim() : null;
+        String subject = requireNonBlank(request.getSubject(), "Subject is required").trim();
+
         ExamScheduleEntity entity = ExamScheduleEntity.builder()
-                .className(className.trim())
-                .subject(subject.trim())
+                .examName(examName)
+                .className(className)
+                .section(section)
+                .subject(subject)
                 .date(request.getDate())
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
@@ -48,15 +51,18 @@ public class ExamScheduleService {
 
     public ExamScheduleResponse update(Long id, ExamScheduleRequest request) {
         ExamScheduleEntity entity = findByIdOrThrow(id);
-        String className = requireNonBlank(request.getClassName(), "Class name is required");
-        String subject = requireNonBlank(request.getSubject(), "Subject is required");
-        boolean changed = !entity.getClassName().equals(className.trim()) || !entity.getSubject().equals(subject.trim());
-        if (changed && examScheduleRepository.existsByClassNameAndSubject(className.trim(), subject.trim())) {
-            throw new DuplicateResourceException(
-                    "Schedule for class '" + className + "' and subject '" + subject + "' already exists");
+        if (request.getExamName() != null) {
+            entity.setExamName(request.getExamName().trim());
         }
-        entity.setClassName(className.trim());
-        entity.setSubject(subject.trim());
+        if (request.getClassName() != null && !request.getClassName().isBlank()) {
+            entity.setClassName(request.getClassName().trim());
+        }
+        if (request.getSection() != null) {
+            entity.setSection(request.getSection().trim());
+        }
+        if (request.getSubject() != null && !request.getSubject().isBlank()) {
+            entity.setSubject(request.getSubject().trim());
+        }
         entity.setDate(request.getDate());
         entity.setStartTime(request.getStartTime());
         entity.setEndTime(request.getEndTime());
