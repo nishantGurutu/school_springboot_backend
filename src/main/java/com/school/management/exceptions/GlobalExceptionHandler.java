@@ -20,6 +20,7 @@ public class GlobalExceptionHandler {
         body.put("timestamp", LocalDateTime.now());
         body.put("status", status.value());
         body.put("error", message);
+        body.put("message", message);
         return new ResponseEntity<>(body, status);
     }
 
@@ -35,7 +36,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<?> handleUnauthorized(UnauthorizedException ex) {
-        return build(HttpStatus.FORBIDDEN, ex.getMessage());
+        return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
     @ExceptionHandler(DuplicateResourceException.class)

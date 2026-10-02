@@ -16,4 +16,5 @@ public class StaffRequest {
     private Double salary;
     private String joinDate;
     private String status;
+    private String password;
 }

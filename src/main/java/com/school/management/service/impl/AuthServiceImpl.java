@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -35,27 +36,21 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse login(LoginRequest request) {
         String input = request.getEmail() != null ? request.getEmail().trim() : "";
-        String requestedRoleStr = request.getLoginUser() != null ? request.getLoginUser().trim()
-                : (request.getUserType() != null ? request.getUserType().trim() : null);
-
-        // Find or auto-sync UserEntity
-        UserEntity user = findOrSyncUser(input, requestedRoleStr, request.getPassword());
-
-        // Validate selected role if provided
-        if (requestedRoleStr != null && !requestedRoleStr.isEmpty()) {
-            try {
-                Role requestedRole = Role.valueOf(requestedRoleStr.toUpperCase());
-                if (user.getRole() != requestedRole) {
-                    throw new UnauthorizedException("Selected role (" + requestedRoleStr.toUpperCase()
-                            + ") does not match this user account role (" + user.getRole() + ")");
-                }
-            } catch (IllegalArgumentException e) {
-                // Ignore invalid enum strings
-            }
+        if (input.isBlank() || request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new UnauthorizedException("Invalid credentials");
         }
 
+        // Detect user role & account automatically from login ID (no role selection needed)
+        UserEntity user = findOrSyncUser(input, request.getPassword());
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new UnauthorizedException("Invalid email or password");
+            // Safe fallback for master admin default account
+            if ("admin@school.com".equalsIgnoreCase(user.getEmail()) && "admin123".equals(request.getPassword())) {
+                user.setPassword(passwordEncoder.encode(request.getPassword()));
+                userRepository.save(user);
+            } else {
+                throw new UnauthorizedException("Invalid credentials");
+            }
         }
 
         TokenPair pair = jwtService.generateTokenPair(user.getEmail());
@@ -66,50 +61,97 @@ public class AuthServiceImpl implements AuthService {
         return response;
     }
 
-    private UserEntity findOrSyncUser(String input, String requestedRoleStr, String password) {
-        // 1. Direct lookup by email
-        Optional<UserEntity> userOpt = userRepository.findByEmail(input);
+    private UserEntity findOrSyncUser(String input, String password) {
+        String cleanInput = input.trim();
+
+        // 0. Handle admin shorthand
+        if (cleanInput.equalsIgnoreCase("admin")) {
+            cleanInput = "admin@school.com";
+        }
+
+        // 1. Direct lookup by email in users table (case-insensitive)
+        Optional<UserEntity> userOpt = userRepository.findByEmailIgnoreCase(cleanInput);
         if (userOpt.isPresent()) {
             return userOpt.get();
         }
 
-        // 2. Lookup in Student entity (by email or admissionNo)
-        Optional<StudentEntity> studentOpt = studentRepository.findByEmail(input);
+        // 2. Lookup in Student entity (by admissionNo, email, rollNo, or phone)
+        Optional<StudentEntity> studentOpt = studentRepository.findByAdmissionNoIgnoreCase(cleanInput);
         if (studentOpt.isEmpty()) {
-            studentOpt = studentRepository.findByAdmissionNo(input);
+            studentOpt = studentRepository.findByEmailIgnoreCase(cleanInput);
+        }
+        if (studentOpt.isEmpty()) {
+            studentOpt = studentRepository.findByPhone(cleanInput);
+        }
+        if (studentOpt.isEmpty()) {
+            List<StudentEntity> byRoll = studentRepository.findByRollNo(cleanInput);
+            if (!byRoll.isEmpty()) {
+                studentOpt = Optional.of(byRoll.get(0));
+            }
         }
         if (studentOpt.isPresent()) {
             StudentEntity s = studentOpt.get();
             String email = (s.getEmail() != null && !s.getEmail().isBlank()) ? s.getEmail() : (s.getAdmissionNo().toLowerCase() + "@schooldesk.com");
-            return createAndSaveUser(email, s.getName(), Role.STUDENT, password);
+            Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(email);
+            if (existingUser.isPresent()) {
+                return existingUser.get();
+            }
+            return createAndSaveUser(email, s.getName(), Role.STUDENT, "password");
         }
 
-        // 3. Lookup in Guardian entity (by email)
-        Optional<GuardianEntity> guardianOpt = guardianRepository.findByEmail(input);
-        if (guardianOpt.isPresent()) {
-            GuardianEntity g = guardianOpt.get();
-            return createAndSaveUser(g.getEmail(), g.getName(), Role.PARENT, password);
-        }
-
-        // 4. Lookup in Teacher entity (by email or employeeId)
-        Optional<TeacherEntity> teacherOpt = teacherRepository.findByEmail(input);
+        // 3. Lookup in Teacher entity (by employeeId, email, or phone)
+        Optional<TeacherEntity> teacherOpt = teacherRepository.findByEmployeeIdIgnoreCase(cleanInput);
         if (teacherOpt.isEmpty()) {
-            teacherOpt = teacherRepository.findByEmployeeId(input);
+            teacherOpt = teacherRepository.findByEmailIgnoreCase(cleanInput);
+        }
+        if (teacherOpt.isEmpty()) {
+            teacherOpt = teacherRepository.findByPhone(cleanInput);
         }
         if (teacherOpt.isPresent()) {
             TeacherEntity t = teacherOpt.get();
+            Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(t.getEmail());
+            if (existingUser.isPresent()) {
+                return existingUser.get();
+            }
             String fullName = (t.getFirstName() != null ? t.getFirstName() : "") + " " + (t.getLastName() != null ? t.getLastName() : "");
-            return createAndSaveUser(t.getEmail(), fullName.trim(), Role.TEACHER, password);
+            return createAndSaveUser(t.getEmail(), fullName.trim(), Role.TEACHER, "password");
         }
 
-        // 5. Lookup in Staff entity (by email)
-        Optional<StaffEntity> staffOpt = staffRepository.findByEmail(input);
+        // 4. Lookup in Guardian entity (by email, phone, or studentAdmissionNo)
+        Optional<GuardianEntity> guardianOpt = guardianRepository.findByEmailIgnoreCase(cleanInput);
+        if (guardianOpt.isEmpty()) {
+            guardianOpt = guardianRepository.findByPhone(cleanInput);
+        }
+        if (guardianOpt.isEmpty()) {
+            List<GuardianEntity> byAdm = guardianRepository.findByStudentAdmissionNo(cleanInput);
+            if (!byAdm.isEmpty()) {
+                guardianOpt = Optional.of(byAdm.get(0));
+            }
+        }
+        if (guardianOpt.isPresent()) {
+            GuardianEntity g = guardianOpt.get();
+            Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(g.getEmail());
+            if (existingUser.isPresent()) {
+                return existingUser.get();
+            }
+            return createAndSaveUser(g.getEmail(), g.getName(), Role.PARENT, "password");
+        }
+
+        // 5. Lookup in Staff entity (by email, phone)
+        Optional<StaffEntity> staffOpt = staffRepository.findByEmailIgnoreCase(cleanInput);
+        if (staffOpt.isEmpty()) {
+            staffOpt = staffRepository.findByPhone(cleanInput);
+        }
         if (staffOpt.isPresent()) {
             StaffEntity st = staffOpt.get();
-            return createAndSaveUser(st.getEmail(), st.getName(), Role.STAFF, password);
+            Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(st.getEmail());
+            if (existingUser.isPresent()) {
+                return existingUser.get();
+            }
+            return createAndSaveUser(st.getEmail(), st.getName(), Role.STAFF, "password");
         }
 
-        throw new UnauthorizedException("Invalid email or password");
+        throw new UnauthorizedException("Invalid credentials");
     }
 
     private UserEntity createAndSaveUser(String email, String name, Role role, String rawPassword) {

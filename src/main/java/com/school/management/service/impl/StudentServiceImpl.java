@@ -54,17 +54,53 @@ public class StudentServiceImpl implements StudentService {
         StudentEntity student = mapToEntity(new StudentEntity(), request, true);
         StudentEntity saved = studentRepository.save(student);
 
-        // Auto-create/sync User account for mobile app login
-        String userEmail = (saved.getEmail() != null && !saved.getEmail().isBlank()) 
-                ? saved.getEmail() : (saved.getAdmissionNo().toLowerCase() + "@schooldesk.com");
-        if (!userRepository.existsByEmail(userEmail)) {
+        // Auto-create/sync User account for student login
+        String userEmail = (request.getLoginEmail() != null && !request.getLoginEmail().isBlank())
+                ? request.getLoginEmail().trim()
+                : ((saved.getEmail() != null && !saved.getEmail().isBlank())
+                    ? saved.getEmail().trim()
+                    : (saved.getAdmissionNo().toLowerCase() + "@schooldesk.com"));
+
+        String rawPassword = (request.getPassword() != null && !request.getPassword().isBlank())
+                ? request.getPassword().trim()
+                : ((request.getLoginPassword() != null && !request.getLoginPassword().isBlank())
+                    ? request.getLoginPassword().trim()
+                    : "password");
+
+        java.util.Optional<UserEntity> existingStudentUser = userRepository.findByEmailIgnoreCase(userEmail);
+        if (existingStudentUser.isEmpty()) {
             userRepository.save(UserEntity.builder()
                     .email(userEmail)
-                    .password(passwordEncoder.encode("password"))
+                    .password(passwordEncoder.encode(rawPassword))
                     .name(saved.getName())
                     .role(Role.STUDENT)
                     .enabled(true)
                     .build());
+        } else {
+            UserEntity user = existingStudentUser.get();
+            if (rawPassword != null && !rawPassword.isBlank()) {
+                user.setPassword(passwordEncoder.encode(rawPassword));
+            }
+            user.setName(saved.getName());
+            user.setRole(Role.STUDENT);
+            userRepository.save(user);
+        }
+
+        // Auto-create/sync PARENT login account if guardian email is provided
+        if (saved.getGuardianEmail() != null && !saved.getGuardianEmail().isBlank()) {
+            String gEmail = saved.getGuardianEmail().trim();
+            if (!userRepository.existsByEmail(gEmail)) {
+                String gName = (saved.getGuardianName() != null && !saved.getGuardianName().isBlank())
+                        ? saved.getGuardianName().trim()
+                        : "Parent of " + saved.getName();
+                userRepository.save(UserEntity.builder()
+                        .email(gEmail)
+                        .password(passwordEncoder.encode("password"))
+                        .name(gName)
+                        .role(Role.PARENT)
+                        .enabled(true)
+                        .build());
+            }
         }
 
         return StudentResponse.fromEntity(saved);
@@ -113,7 +149,30 @@ public class StudentServiceImpl implements StudentService {
     @Transactional
     public StudentResponse update(Long id, StudentRequest request) {
         StudentEntity student = findByIdOrThrow(id);
-        return StudentResponse.fromEntity(studentRepository.save(mapToEntity(student, request, false)));
+        StudentEntity updated = studentRepository.save(mapToEntity(student, request, false));
+
+        // Sync student UserEntity
+        String rawPassword = (request.getPassword() != null && !request.getPassword().isBlank())
+                ? request.getPassword().trim()
+                : ((request.getLoginPassword() != null && !request.getLoginPassword().isBlank())
+                    ? request.getLoginPassword().trim()
+                    : null);
+        String targetEmail = (request.getLoginEmail() != null && !request.getLoginEmail().isBlank())
+                ? request.getLoginEmail().trim()
+                : ((updated.getEmail() != null && !updated.getEmail().isBlank()) 
+                    ? updated.getEmail().trim() 
+                    : (updated.getAdmissionNo().toLowerCase() + "@schooldesk.com"));
+
+        userRepository.findByEmailIgnoreCase(targetEmail).ifPresent(user -> {
+            if (rawPassword != null) {
+                user.setPassword(passwordEncoder.encode(rawPassword));
+            }
+            user.setName(updated.getName());
+            user.setRole(Role.STUDENT);
+            userRepository.save(user);
+        });
+
+        return StudentResponse.fromEntity(updated);
     }
 
     @Override
@@ -128,6 +187,10 @@ public class StudentServiceImpl implements StudentService {
     @Transactional
     public void delete(Long id) {
         StudentEntity student = findByIdOrThrow(id);
+        String targetEmail = (student.getEmail() != null && !student.getEmail().isBlank()) 
+                ? student.getEmail().trim() 
+                : (student.getAdmissionNo().toLowerCase() + "@schooldesk.com");
+        userRepository.findByEmailIgnoreCase(targetEmail).ifPresent(userRepository::delete);
         studentRepository.delete(student);
     }
 

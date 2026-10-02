@@ -63,15 +63,29 @@ public class TeacherServiceImpl implements TeacherService {
 
         TeacherEntity saved = teacherRepository.save(teacher);
 
-        // Auto-create/sync User account for mobile app login
-        if (!userRepository.existsByEmail(saved.getEmail())) {
+        // Auto-create/sync User account for teacher login
+        String rawPassword = (request.getPassword() != null && !request.getPassword().isBlank()) 
+                ? request.getPassword().trim() : "password";
+        String teacherEmail = saved.getEmail().trim();
+        String teacherFullName = (saved.getFirstName() + " " + saved.getLastName()).trim();
+
+        java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
+        if (existingUser.isEmpty()) {
             userRepository.save(UserEntity.builder()
-                    .email(saved.getEmail())
-                    .password(passwordEncoder.encode("password"))
-                    .name(saved.getFirstName() + " " + saved.getLastName())
+                    .email(teacherEmail)
+                    .password(passwordEncoder.encode(rawPassword))
+                    .name(teacherFullName)
                     .role(Role.TEACHER)
                     .enabled(true)
                     .build());
+        } else {
+            UserEntity user = existingUser.get();
+            if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                user.setPassword(passwordEncoder.encode(rawPassword));
+            }
+            user.setName(teacherFullName);
+            user.setRole(Role.TEACHER);
+            userRepository.save(user);
         }
 
         return TeacherResponse.fromEntity(saved);
@@ -150,7 +164,19 @@ public class TeacherServiceImpl implements TeacherService {
             teacher.setStatus(request.getStatus());
         }
 
-        return TeacherResponse.fromEntity(teacherRepository.save(teacher));
+        TeacherEntity updated = teacherRepository.save(teacher);
+
+        // Sync UserEntity password and email if changed
+        String updatedEmail = updated.getEmail().trim();
+        userRepository.findByEmailIgnoreCase(updatedEmail).ifPresent(user -> {
+            if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                user.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+            }
+            user.setName((updated.getFirstName() + " " + updated.getLastName()).trim());
+            userRepository.save(user);
+        });
+
+        return TeacherResponse.fromEntity(updated);
     }
 
     @Override
@@ -177,6 +203,9 @@ public class TeacherServiceImpl implements TeacherService {
     @Transactional
     public void delete(Long id) {
         TeacherEntity teacher = findByIdOrThrow(id);
+        if (teacher.getEmail() != null) {
+            userRepository.findByEmailIgnoreCase(teacher.getEmail()).ifPresent(userRepository::delete);
+        }
         teacherRepository.delete(teacher);
     }
 

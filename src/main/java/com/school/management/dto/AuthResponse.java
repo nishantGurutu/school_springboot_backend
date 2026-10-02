@@ -21,6 +21,7 @@ public class AuthResponse {
     private String email;
     private String name;
     private Role role;
+    private String userType;
     private String className;
     private String details;
     private String avatarUrl;
@@ -29,6 +30,7 @@ public class AuthResponse {
     private String department;
 
     public static AuthResponse fromPair(JwtService.TokenPair pair, UserEntity user, String message) {
+        String uType = user.getRole() != null ? user.getRole().name() : "STUDENT";
         return AuthResponse.builder()
                 .message(message)
                 .accessToken(pair.accessToken())
@@ -39,6 +41,7 @@ public class AuthResponse {
                 .email(user.getEmail())
                 .name(user.getName())
                 .role(user.getRole())
+                .userType(uType)
                 .build();
     }
 }

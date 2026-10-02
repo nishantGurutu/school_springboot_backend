@@ -66,4 +66,5 @@ public class TeacherRequest {
     private String avatar;
 
     private TeacherStatus status;
+    private String password;
 }

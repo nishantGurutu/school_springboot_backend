@@ -17,7 +17,13 @@ public interface TeacherRepository extends JpaRepository<TeacherEntity, Long> {
 
     Optional<TeacherEntity> findByEmployeeId(String employeeId);
 
+    Optional<TeacherEntity> findByEmployeeIdIgnoreCase(String employeeId);
+
     Optional<TeacherEntity> findByEmail(String email);
+
+    Optional<TeacherEntity> findByEmailIgnoreCase(String email);
+
+    Optional<TeacherEntity> findByPhone(String phone);
 
     boolean existsByEmployeeId(String employeeId);
 

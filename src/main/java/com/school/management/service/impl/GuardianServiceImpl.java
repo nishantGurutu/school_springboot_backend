@@ -151,6 +151,9 @@ public class GuardianServiceImpl implements GuardianService {
     @Transactional
     public void delete(Long id) {
         GuardianEntity guardian = findByIdOrThrow(id);
+        if (guardian.getEmail() != null) {
+            userRepository.findByEmailIgnoreCase(guardian.getEmail().trim()).ifPresent(userRepository::delete);
+        }
         guardianRepository.delete(guardian);
     }
 
@@ -164,15 +167,23 @@ public class GuardianServiceImpl implements GuardianService {
     }
 
     private void createParentLogin(String email, String name, String rawPassword) {
-        if (userRepository.existsByEmail(email)) {
-            throw new DuplicateResourceException(
-                    "Email '" + email + "' is already registered. Use a different email for the parent login.");
+        String cleanEmail = email.trim();
+        java.util.Optional<UserEntity> existing = userRepository.findByEmailIgnoreCase(cleanEmail);
+        if (existing.isPresent()) {
+            UserEntity user = existing.get();
+            user.setPassword(passwordEncoder.encode(rawPassword));
+            user.setName(name);
+            user.setRole(Role.PARENT);
+            user.setEnabled(true);
+            userRepository.save(user);
+            return;
         }
         UserEntity user = UserEntity.builder()
-                .email(email)
+                .email(cleanEmail)
                 .password(passwordEncoder.encode(rawPassword))
                 .name(name)
                 .role(Role.PARENT)
+                .enabled(true)
                 .build();
         userRepository.save(user);
     }

@@ -16,6 +16,10 @@ public interface GuardianRepository extends JpaRepository<GuardianEntity, Long> 
 
     Optional<GuardianEntity> findByEmail(String email);
 
+    Optional<GuardianEntity> findByEmailIgnoreCase(String email);
+
+    Optional<GuardianEntity> findByPhone(String phone);
+
     boolean existsByEmail(String email);
 
     List<GuardianEntity> findByStudentAdmissionNo(String studentAdmissionNo);

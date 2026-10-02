@@ -159,4 +159,7 @@ public class StudentRequest {
     private Double attendancePercentage;
 
     private StudentStatus status;
+    private String password;
+    private String loginEmail;
+    private String loginPassword;
 }
