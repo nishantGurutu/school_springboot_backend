@@ -33,6 +33,8 @@ public class MobileAppController {
     private final AttendanceRepository attendanceRepository;
     private final HolidayRepository holidayRepository;
     private final HolidayService holidayService;
+    private final ExamRepository examRepository;
+    private final ExamScheduleRepository examScheduleRepository;
 
     // In-memory persistent stores for interactive mobile app features
     private static final Map<String, List<Map<String, Object>>> homeworkSubmissions = new ConcurrentHashMap<>();
@@ -619,23 +621,93 @@ public class MobileAppController {
     @GetMapping("/exams")
     @Operation(summary = "Get exam schedule & results")
     public ResponseEntity<List<Map<String, Object>>> getExams() {
-        List<Map<String, Object>> exams = new ArrayList<>(customExams);
+        List<Map<String, Object>> exams = new ArrayList<>();
 
-        exams.add(createExam("exam_1", "Mathematics", "Term 1 Midterm Examination",
-                "Algebra, Geometry & Trigonometry chapters from Term 1 syllabus.",
-                LocalDate.now().plusDays(5).toString(), "09:00 AM", "11:30 AM", "Room 12", 100.0, null, "upcoming", "Class 10-A"));
+        // 1. Fetch real Exam Schedules from database (created via Dashboard Exam Schedule)
+        if (examScheduleRepository != null) {
+            List<ExamScheduleEntity> schedules = examScheduleRepository.findAll();
+            for (ExamScheduleEntity s : schedules) {
+                String title = (s.getExamName() != null && !s.getExamName().isBlank())
+                        ? s.getExamName()
+                        : (s.getClassName() + " " + s.getSubject() + " Exam");
+                String desc = (s.getExamName() != null ? s.getExamName() + " - " : "")
+                        + s.getSubject() + " examination for " + s.getClassName()
+                        + (s.getSection() != null ? " (" + s.getSection() + ")" : "");
+                String date = (s.getDate() != null && !s.getDate().isBlank()) ? s.getDate() : LocalDate.now().plusDays(3).toString();
+                String start = (s.getStartTime() != null && !s.getStartTime().isBlank()) ? s.getStartTime() : "09:00 AM";
+                String end = (s.getEndTime() != null && !s.getEndTime().isBlank()) ? s.getEndTime() : "11:30 AM";
+                String room = (s.getRoom() != null && !s.getRoom().isBlank()) ? s.getRoom() : "Room 101";
 
-        exams.add(createExam("exam_2", "Science", "Term 1 Science Assessment",
-                "Physics, Chemistry & Biology Term 1 topics.",
-                LocalDate.now().plusDays(8).toString(), "09:00 AM", "11:30 AM", "Room 15", 100.0, null, "upcoming", "Class 10-A"));
+                exams.add(createExam(
+                        "sched_" + s.getId(),
+                        s.getSubject(),
+                        title,
+                        desc,
+                        date,
+                        start,
+                        end,
+                        room,
+                        100.0,
+                        null,
+                        "upcoming",
+                        s.getClassName()
+                ));
+            }
+        }
 
-        exams.add(createExam("exam_5", "Mathematics", "Weekly Math Quiz",
-                "Series of weekly math quizzes completed throughout the term.",
-                LocalDate.now().minusDays(4).toString(), "10:00 AM", "10:45 AM", "Room 12", 25.0, 24.0, "completed", "Class 10-A"));
+        // 2. Fetch real Exams from database (created via Dashboard Exam List)
+        if (examRepository != null) {
+            List<ExamEntity> dbExams = examRepository.findAll();
+            for (ExamEntity e : dbExams) {
+                String title = e.getName();
+                String desc = e.getName() + " - Scheduled Examination";
+                String date = (e.getDate() != null && !e.getDate().isBlank()) ? e.getDate() : LocalDate.now().plusDays(5).toString();
+                String start = (e.getStartTime() != null && !e.getStartTime().isBlank()) ? e.getStartTime() : "09:00 AM";
+                String end = (e.getEndTime() != null && !e.getEndTime().isBlank()) ? e.getEndTime() : "12:00 PM";
+                String status = "Active".equalsIgnoreCase(e.getStatus()) ? "upcoming" : "completed";
 
-        exams.add(createExam("exam_6", "Science", "Weekly Science Test",
-                "Weekly assessment covering physics and chemistry concepts.",
-                LocalDate.now().minusDays(10).toString(), "09:00 AM", "10:00 AM", "Room 15", 30.0, 27.0, "completed", "Class 10-A"));
+                // Avoid duplicate if already added by schedule with same title
+                boolean alreadyPresent = exams.stream().anyMatch(m -> title.equalsIgnoreCase(String.valueOf(m.get("title"))));
+                if (!alreadyPresent) {
+                    exams.add(createExam(
+                            "exam_db_" + e.getId(),
+                            title,
+                            title,
+                            desc,
+                            date,
+                            start,
+                            end,
+                            "Exam Hall",
+                            100.0,
+                            null,
+                            status,
+                            "All Classes"
+                    ));
+                }
+            }
+        }
+
+        // 3. Add custom in-memory interactive exams
+        exams.addAll(customExams);
+
+        // 4. Fallback demo exams if database has no exams at all
+        if (exams.isEmpty()) {
+            exams.add(createExam("exam_1", "Mathematics", "Term 1 Midterm Examination",
+                    "Algebra, Geometry & Trigonometry chapters from Term 1 syllabus.",
+                    LocalDate.now().plusDays(5).toString(), "09:00 AM", "11:30 AM", "Room 12", 100.0, null, "upcoming", "Class 10-A"));
+
+            exams.add(createExam("exam_2", "Science", "Term 1 Science Assessment",
+                    "Physics, Chemistry & Biology Term 1 topics.",
+                    LocalDate.now().plusDays(8).toString(), "09:00 AM", "11:30 AM", "Room 15", 100.0, null, "upcoming", "Class 10-A"));
+
+            exams.add(createExam("exam_5", "Mathematics", "Weekly Math Quiz",
+                    "Series of weekly math quizzes completed throughout the term.",
+                    LocalDate.now().minusDays(4).toString(), "10:00 AM", "10:45 AM", "Room 12", 25.0, 24.0, "completed", "Class 10-A"));
+
+            exams.add(createExam("exam_6", "Science", "Weekly Science Test",
+                    "Weekly assessment covering physics and chemistry concepts.",
+                    LocalDate.now().minusDays(10).toString(), "09:00 AM", "10:00 AM", "Room 15", 30.0, 27.0, "completed", "Class 10-A"));
+        }
 
         return ResponseEntity.ok(exams);
     }
@@ -653,6 +725,23 @@ public class MobileAppController {
         String room = String.valueOf(req.getOrDefault("room", "Room 12"));
         double maxMarks = Double.parseDouble(String.valueOf(req.getOrDefault("maxMarks", 100.0)));
         String className = String.valueOf(req.getOrDefault("className", "Class 10-A"));
+
+        if (examScheduleRepository != null) {
+            try {
+                ExamScheduleEntity entity = ExamScheduleEntity.builder()
+                        .examName(title)
+                        .className(className)
+                        .section("A")
+                        .subject(subject)
+                        .date(date)
+                        .startTime(start)
+                        .endTime(end)
+                        .duration("2 Hours 30 Min")
+                        .room(room)
+                        .build();
+                examScheduleRepository.save(entity);
+            } catch (Exception ignored) {}
+        }
 
         Map<String, Object> exam = createExam(id, subject, title, desc, date, start, end, room, maxMarks, null, "upcoming", className);
         customExams.add(0, exam);
