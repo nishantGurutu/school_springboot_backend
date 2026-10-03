@@ -69,6 +69,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
                         .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
                         .requestMatchers("/api/holidays/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/mobile/**").authenticated()
 
                         // User profile - any authenticated user
                         .requestMatchers("/api/profile/**").authenticated()

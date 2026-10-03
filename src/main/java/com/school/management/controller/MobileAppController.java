@@ -8,6 +8,7 @@ import com.school.management.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +23,7 @@ import com.school.management.service.HolidayService;
 @RestController
 @RequestMapping("/api/mobile")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Mobile App", description = "Endpoints serving Flutter Mobile App features")
 public class MobileAppController {
 
@@ -35,6 +37,7 @@ public class MobileAppController {
     private final HolidayService holidayService;
     private final ExamRepository examRepository;
     private final ExamScheduleRepository examScheduleRepository;
+    private final TimetableRepository timetableRepository;
 
     // In-memory persistent stores for interactive mobile app features
     private static final Map<String, List<Map<String, Object>>> homeworkSubmissions = new ConcurrentHashMap<>();
@@ -605,17 +608,130 @@ public class MobileAppController {
     }
 
     @GetMapping("/timetable")
-    @Operation(summary = "Get timetable schedule")
-    public ResponseEntity<List<Map<String, Object>>> getTimetable() {
-        List<Map<String, Object>> slots = new ArrayList<>();
-        String[] days = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-        for (String day : days) {
-            slots.add(createSlot(day + "_1", day, "Mathematics", "09:00 AM", "09:45 AM", "Ms. Priya", "Room 12"));
-            slots.add(createSlot(day + "_2", day, "English Literature", "09:45 AM", "10:30 AM", "Mr. Sharma", "Room 12"));
-            slots.add(createSlot(day + "_3", day, "Science Theory", "10:45 AM", "11:30 AM", "Dr. Verma", "Science Lab"));
-            slots.add(createSlot(day + "_4", day, "Computer Coding", "11:30 AM", "12:15 PM", "Ms. Kulkarni", "Computer Lab"));
+    @Operation(summary = "Get timetable schedule tailored for Student, Teacher, or Parent")
+    public ResponseEntity<List<Map<String, Object>>> getTimetable(
+            @RequestParam(required = false) String className,
+            @RequestParam(required = false) String section,
+            @RequestParam(required = false) String day,
+            @RequestParam(required = false) String teacherName) {
+
+        UserEntity user = securityUtil.getCurrentUser().orElse(null);
+        String resolvedClass = className;
+        String resolvedSection = section;
+        String resolvedTeacher = teacherName;
+
+        if (user != null) {
+            if (user.getRole() == Role.STUDENT) {
+                Optional<StudentEntity> studentOpt = studentRepository.findByEmail(user.getEmail());
+                if (studentOpt.isPresent()) {
+                    StudentEntity s = studentOpt.get();
+                    if (resolvedClass == null || resolvedClass.isBlank()) {
+                        resolvedClass = s.getClassName();
+                    }
+                    if (resolvedSection == null || resolvedSection.isBlank()) {
+                        resolvedSection = s.getSection();
+                    }
+                }
+            } else if (user.getRole() == Role.TEACHER) {
+                Optional<TeacherEntity> teacherOpt = teacherRepository.findByEmail(user.getEmail());
+                if (teacherOpt.isPresent()) {
+                    TeacherEntity t = teacherOpt.get();
+                    if (resolvedTeacher == null || resolvedTeacher.isBlank()) {
+                        String fullName = ((t.getFirstName() != null ? t.getFirstName() : "") + " " +
+                                (t.getLastName() != null ? t.getLastName() : "")).trim();
+                        resolvedTeacher = !fullName.isEmpty() ? fullName : user.getName();
+                    }
+                }
+            } else if (user.getRole() == Role.PARENT) {
+                Optional<GuardianEntity> guardianOpt = guardianRepository.findByEmail(user.getEmail());
+                if (guardianOpt.isPresent()) {
+                    GuardianEntity g = guardianOpt.get();
+                    String adm = g.getStudentAdmissionNo();
+                    if (adm != null && !adm.isBlank()) {
+                        Optional<StudentEntity> studentOpt = studentRepository.findByAdmissionNo(adm);
+                        if (studentOpt.isPresent()) {
+                            StudentEntity s = studentOpt.get();
+                            if (resolvedClass == null || resolvedClass.isBlank()) {
+                                resolvedClass = s.getClassName();
+                            }
+                            if (resolvedSection == null || resolvedSection.isBlank()) {
+                                resolvedSection = s.getSection();
+                            }
+                        }
+                    }
+                }
+            }
         }
-        return ResponseEntity.ok(slots);
+
+        // Clean up resolved values (e.g. if class is "Class 10-A", split it into "Class 10" and "A")
+        if (resolvedClass != null && resolvedClass.contains("-") && (resolvedSection == null || resolvedSection.isBlank())) {
+            String[] parts = resolvedClass.split("-");
+            resolvedClass = parts[0].trim();
+            if (parts.length > 1) resolvedSection = parts[1].trim();
+        }
+
+        List<TimetableEntity> entities = new ArrayList<>();
+        try {
+            if (resolvedTeacher != null && !resolvedTeacher.isBlank()) {
+                entities = timetableRepository.findByTeacherNameContainingIgnoreCase(resolvedTeacher);
+                if (entities.isEmpty() && resolvedTeacher.contains(" ")) {
+                    String[] parts = resolvedTeacher.split(" ");
+                    entities = timetableRepository.findByTeacherNameContainingIgnoreCase(parts[parts.length - 1]);
+                }
+            } else if (resolvedClass != null && !resolvedClass.isBlank()) {
+                if (resolvedSection != null && !resolvedSection.isBlank()) {
+                    entities = timetableRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase(resolvedClass, resolvedSection);
+                }
+                if (entities.isEmpty()) {
+                    entities = timetableRepository.findByClassNameIgnoreCase(resolvedClass);
+                }
+                // Also check normalized class variations (e.g. "Class 6" vs "6", "Class KG" vs "KG")
+                if (entities.isEmpty()) {
+                    String altClass = resolvedClass.toLowerCase().startsWith("class ")
+                            ? resolvedClass.substring(6).trim()
+                            : ("Class " + resolvedClass);
+                    if (resolvedSection != null && !resolvedSection.isBlank()) {
+                        entities = timetableRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase(altClass, resolvedSection);
+                    }
+                    if (entities.isEmpty()) {
+                        entities = timetableRepository.findByClassNameIgnoreCase(altClass);
+                    }
+                }
+            }
+
+            // Fallback: If no slots found specifically for this class/section, but timetable records exist in database,
+            // return all saved slots so the user's dashboard-created timetable is always visible in the app!
+            if (entities.isEmpty()) {
+                entities = timetableRepository.findAll();
+            }
+
+            if (day != null && !day.isBlank() && !"all".equalsIgnoreCase(day.trim())) {
+                String dLower = day.trim().toLowerCase();
+                String prefix = dLower.substring(0, Math.min(3, dLower.length()));
+                entities = entities.stream()
+                        .filter(e -> e.getDayOfWeek() != null && e.getDayOfWeek().toLowerCase().startsWith(prefix))
+                        .toList();
+            }
+        } catch (Exception e) {
+            log.error("Error fetching mobile timetable slots", e);
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (TimetableEntity t : entities) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", String.valueOf(t.getId()));
+            m.put("dayOfWeek", t.getDayOfWeek());
+            m.put("periodName", t.getPeriodName() != null ? t.getPeriodName() : "Period");
+            m.put("subject", t.getSubject());
+            m.put("startTime", t.getStartTime());
+            m.put("endTime", t.getEndTime());
+            m.put("teacherName", t.getTeacherName() != null ? t.getTeacherName() : "");
+            m.put("classroom", t.getClassroom() != null ? t.getClassroom() : "");
+            m.put("className", t.getClassName());
+            m.put("section", t.getSection());
+            result.add(m);
+        }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/exams")

@@ -7,7 +7,9 @@ import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.SectionRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,10 +17,29 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional
 public class SectionService {
 
     private final SectionRepository sectionRepository;
+
+    @PostConstruct
+    public void seedInitialSectionsIfEmpty() {
+        try {
+            if (sectionRepository.count() == 0) {
+                log.info("Seeding initial sections A, B, C, D...");
+                List<SectionEntity> initialSections = List.of(
+                        SectionEntity.builder().name("A").status("Active").build(),
+                        SectionEntity.builder().name("B").status("Active").build(),
+                        SectionEntity.builder().name("C").status("Active").build(),
+                        SectionEntity.builder().name("D").status("Active").build()
+                );
+                sectionRepository.saveAll(initialSections);
+            }
+        } catch (Exception e) {
+            log.warn("Could not seed initial sections: {}", e.getMessage());
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<SectionResponse> getAll() {
