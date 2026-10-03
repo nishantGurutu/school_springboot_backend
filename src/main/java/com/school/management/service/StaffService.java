@@ -39,11 +39,12 @@ public class StaffService {
         StaffEntity staff = mapToEntity(new StaffEntity(), request, true);
         StaffEntity saved = staffRepository.save(staff);
 
-        // Auto-create/sync User account for staff login
+        // Auto-create/sync User account with role-specific permissions
         if (saved.getEmail() != null && !saved.getEmail().isBlank()) {
             String staffEmail = saved.getEmail().trim();
             String rawPassword = (request.getPassword() != null && !request.getPassword().isBlank()) 
                     ? request.getPassword().trim() : "password";
+            Role targetRole = resolveRole(request);
 
             java.util.Optional<UserEntity> existing = userRepository.findByEmailIgnoreCase(staffEmail);
             if (existing.isEmpty()) {
@@ -51,7 +52,7 @@ public class StaffService {
                         .email(staffEmail)
                         .password(passwordEncoder.encode(rawPassword))
                         .name(saved.getName())
-                        .role(Role.STAFF)
+                        .role(targetRole)
                         .enabled(true)
                         .build());
             } else {
@@ -60,7 +61,7 @@ public class StaffService {
                     user.setPassword(passwordEncoder.encode(rawPassword));
                 }
                 user.setName(saved.getName());
-                user.setRole(Role.STAFF);
+                user.setRole(targetRole);
                 userRepository.save(user);
             }
         }
@@ -74,12 +75,13 @@ public class StaffService {
         StaffEntity updated = staffRepository.save(mapToEntity(staff, request, false));
 
         if (updated.getEmail() != null && !updated.getEmail().isBlank()) {
+            Role targetRole = resolveRole(request);
             userRepository.findByEmailIgnoreCase(updated.getEmail().trim()).ifPresent(user -> {
                 if (request.getPassword() != null && !request.getPassword().isBlank()) {
                     user.setPassword(passwordEncoder.encode(request.getPassword().trim()));
                 }
                 user.setName(updated.getName());
-                user.setRole(Role.STAFF);
+                user.setRole(targetRole);
                 userRepository.save(user);
             });
         }
@@ -96,6 +98,29 @@ public class StaffService {
         staffRepository.delete(staff);
     }
 
+    private Role resolveRole(StaffRequest r) {
+        String roleStr = (r.getRole() != null) ? r.getRole().trim().toUpperCase() : "";
+        String desigStr = (r.getDesignation() != null) ? r.getDesignation().trim().toUpperCase() : "";
+        String typeStr = (r.getStaffType() != null) ? r.getStaffType().trim().toUpperCase() : "";
+
+        if (roleStr.equals("PRINCIPAL") || roleStr.contains("PRINCIPAL") || desigStr.contains("PRINCIPAL") || typeStr.contains("PRINCIPAL")) {
+            return Role.PRINCIPAL;
+        }
+        if (roleStr.equals("ACCOUNTANT") || roleStr.contains("ACCOUNT") || desigStr.contains("ACCOUNT") || typeStr.contains("ACCOUNT")) {
+            return Role.ACCOUNTANT;
+        }
+        if (roleStr.equals("LIBRARIAN") || roleStr.contains("LIBRAR") || desigStr.contains("LIBRAR") || typeStr.contains("LIBRAR")) {
+            return Role.LIBRARIAN;
+        }
+        if (roleStr.equals("SUPER_ADMIN") || roleStr.equals("MASTER_ADMIN") || roleStr.equals("ADMIN")) {
+            return Role.SUPER_ADMIN;
+        }
+        if (roleStr.equals("TEACHER") || desigStr.contains("TEACHER") || typeStr.contains("TEACHER") || typeStr.contains("FACULTY")) {
+            return Role.TEACHER;
+        }
+        return Role.STAFF;
+    }
+
     private StaffEntity mapToEntity(StaffEntity e, StaffRequest r, boolean create) {
         e.setName(requireNonBlank(r.getName(), "Name is required").trim());
         e.setStaffType(r.getStaffType());
@@ -105,6 +130,7 @@ public class StaffService {
         e.setSalary(r.getSalary());
         e.setJoinDate(r.getJoinDate());
         e.setStatus(r.getStatus());
+        e.setRole(resolveRole(r).name());
         return e;
     }
 

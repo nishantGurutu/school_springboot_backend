@@ -12,4 +12,5 @@ public class NoticeRequest {
     private String date;
     private String target;
     private String category;
+    private String content;
 }

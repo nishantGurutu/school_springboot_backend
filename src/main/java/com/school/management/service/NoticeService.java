@@ -20,7 +20,7 @@ public class NoticeService {
 
     @Transactional(readOnly = true)
     public List<NoticeResponse> getAll() {
-        return noticeRepository.findAll().stream().map(NoticeResponse::fromEntity).toList();
+        return noticeRepository.findAllByOrderByIdDesc().stream().map(NoticeResponse::fromEntity).toList();
     }
 
     @Transactional(readOnly = true)
@@ -49,8 +49,9 @@ public class NoticeService {
     private NoticeEntity mapToEntity(NoticeEntity e, NoticeRequest r) {
         e.setTitle(requireNonBlank(r.getTitle(), "Title is required").trim());
         e.setDate(r.getDate());
-        e.setTarget(r.getTarget());
-        e.setCategory(r.getCategory());
+        e.setTarget(r.getTarget() != null && !r.getTarget().isBlank() ? r.getTarget() : "ALL");
+        e.setCategory(r.getCategory() != null && !r.getCategory().isBlank() ? r.getCategory() : "General");
+        e.setContent(r.getContent());
         return e;
     }
 

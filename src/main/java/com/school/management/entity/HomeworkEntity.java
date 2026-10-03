@@ -6,35 +6,44 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "notices", indexes = {
-        @Index(name = "idx_notice_date", columnList = "date"),
-        @Index(name = "idx_notice_category", columnList = "category")
+@Table(name = "homeworks", indexes = {
+        @Index(name = "idx_homework_class", columnList = "className"),
+        @Index(name = "idx_homework_subject", columnList = "subject"),
+        @Index(name = "idx_homework_due_date", columnList = "dueDate")
 })
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class NoticeEntity {
+public class HomeworkEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 255)
+    @Column(nullable = false)
     private String title;
 
-    @Column(length = 32)
-    private String date;
+    @Column(nullable = false)
+    private String subject;
 
-    @Column(length = 128)
-    private String target;
+    @Column(nullable = false)
+    private String className;
 
-    @Column(length = 64)
-    private String category;
+    private String section;
 
     @Column(columnDefinition = "TEXT")
-    private String content;
+    private String description;
+
+    private String assignedDate;
+
+    private String dueDate;
+
+    @Builder.Default
+    private String status = "ACTIVE";
+
+    private String assignedBy;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

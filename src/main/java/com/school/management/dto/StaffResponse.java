@@ -17,6 +17,7 @@ public class StaffResponse {
     private Double salary;
     private String joinDate;
     private String status;
+    private String role;
 
     public static StaffResponse fromEntity(StaffEntity staff) {
         return StaffResponse.builder()
@@ -29,6 +30,7 @@ public class StaffResponse {
                 .salary(staff.getSalary())
                 .joinDate(staff.getJoinDate())
                 .status(staff.getStatus())
+                .role(staff.getRole() != null ? staff.getRole() : staff.getStaffType())
                 .build();
     }
 }

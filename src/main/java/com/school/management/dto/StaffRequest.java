@@ -17,4 +17,5 @@ public class StaffRequest {
     private String joinDate;
     private String status;
     private String password;
+    private String role;
 }

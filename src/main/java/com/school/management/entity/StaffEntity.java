@@ -44,6 +44,9 @@ public class StaffEntity {
     @Column(length = 16)
     private String status;
 
+    @Column(length = 32)
+    private String role;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
