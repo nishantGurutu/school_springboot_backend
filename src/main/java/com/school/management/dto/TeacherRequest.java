@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class TeacherRequest {
@@ -30,15 +31,28 @@ public class TeacherRequest {
     @Size(max = 64, message = "Department must be at most 64 characters")
     private String department;
 
-    @NotBlank(message = "Subject is required")
-    @Size(max = 64, message = "Subject must be at most 64 characters")
+    private Long departmentId;
+
+    @Size(max = 500, message = "Subject must be at most 500 characters")
     private String subject;
+
+    // Multi-select Subject IDs
+    private List<Long> subjectIds;
+
+    // Multi-select Class IDs
+    private List<Long> assignedClassIds;
+    private List<Long> classIds; // alias
+
+    @Size(max = 500, message = "Assigned class must be at most 500 characters")
+    private String assignedClass;
 
     @Size(max = 128, message = "Qualification must be at most 128 characters")
     private String qualification;
 
     @Size(max = 64, message = "Designation must be at most 64 characters")
     private String designation;
+
+    private Long designationId;
 
     @NotBlank(message = "Phone number is required")
     @Pattern(regexp = "^[0-9+\\- ]{7,20}$", message = "Invalid phone number")
@@ -68,4 +82,25 @@ public class TeacherRequest {
     private TeacherStatus status;
     private String password;
     private String type; // Teacher, Principal, Staff
+
+    // Form fields
+    private String gender;
+    private LocalDate dob;
+    private String fatherName;
+    private String motherName;
+    private String maritalStatus;
+    private String contractType;
+    private String shift;
+    private String workLocation;
+    private String height;
+    private String weight;
+    private String bankAccountNumber;
+    private String bankName;
+    private String ifscCode;
+    private String nationalIdNumber;
+    private String docName;
+    private String prevSchoolName;
+    private String prevSchoolAddress;
+    private String permanentAddress;
+    private String teacherBio;
 }

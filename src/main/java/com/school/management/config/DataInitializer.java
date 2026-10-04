@@ -5,6 +5,7 @@ import com.school.management.entity.UserEntity;
 import com.school.management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -14,9 +15,16 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JdbcTemplate jdbcTemplate;
 
     @Override
     public void run(String... args) {
+        try {
+            jdbcTemplate.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS department_id BIGINT");
+            jdbcTemplate.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS designation_id BIGINT");
+        } catch (Exception ignored) {
+        }
+
         // Ensure default Super Admin account exists so admin can log into dashboard
         if (!userRepository.existsByRole(Role.MASTER_ADMIN) && !userRepository.existsByEmail("admin@school.com")) {
             userRepository.save(UserEntity.builder()

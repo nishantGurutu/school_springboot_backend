@@ -18,9 +18,18 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.school.management.entity.StaffEntity;
+import com.school.management.entity.SchoolClassEntity;
+import com.school.management.entity.SubjectEntity;
 import com.school.management.repository.StaffRepository;
+import com.school.management.repository.SchoolClassRepository;
+import com.school.management.repository.SubjectRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +40,8 @@ public class TeacherServiceImpl implements TeacherService {
     private final TeacherRepository teacherRepository;
     private final UserRepository userRepository;
     private final StaffRepository staffRepository;
+    private final SchoolClassRepository schoolClassRepository;
+    private final SubjectRepository subjectRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -63,14 +74,61 @@ public class TeacherServiceImpl implements TeacherService {
                 ? request.getDesignation().trim()
                 : normalizedType;
 
+        // Resolve assigned classes
+        List<Long> targetClassIds = request.getAssignedClassIds() != null && !request.getAssignedClassIds().isEmpty()
+                ? request.getAssignedClassIds()
+                : request.getClassIds();
+
+        Set<SchoolClassEntity> classes = new HashSet<>();
+        String classSummary = request.getAssignedClass();
+        String classIdsStr = "";
+
+        if (targetClassIds != null && !targetClassIds.isEmpty()) {
+            List<SchoolClassEntity> foundClasses = schoolClassRepository.findAllById(targetClassIds);
+            classes.addAll(foundClasses);
+            classIdsStr = targetClassIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+            if (classSummary == null || classSummary.isBlank()) {
+                classSummary = foundClasses.stream()
+                        .map(c -> c.getSection() != null && !c.getSection().isBlank() ? c.getName() + " (" + c.getSection() + ")" : c.getName())
+                        .collect(Collectors.joining(", "));
+            }
+        }
+
+        // Resolve subject specializations
+        List<Long> targetSubjectIds = request.getSubjectIds();
+        Set<SubjectEntity> subjects = new HashSet<>();
+        String subjectSummary = request.getSubject();
+        String subjectIdsStr = "";
+
+        if (targetSubjectIds != null && !targetSubjectIds.isEmpty()) {
+            List<SubjectEntity> foundSubjects = subjectRepository.findAllById(targetSubjectIds);
+            subjects.addAll(foundSubjects);
+            subjectIdsStr = targetSubjectIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+            if (subjectSummary == null || subjectSummary.isBlank() || "General".equalsIgnoreCase(subjectSummary)) {
+                subjectSummary = foundSubjects.stream()
+                        .map(SubjectEntity::getName)
+                        .collect(Collectors.joining(", "));
+            }
+        }
+        if (subjectSummary == null || subjectSummary.isBlank()) {
+            subjectSummary = "General";
+        }
+
         TeacherEntity teacher = TeacherEntity.builder()
                 .employeeId(request.getEmployeeId().trim())
                 .firstName(request.getFirstName().trim())
                 .lastName(request.getLastName().trim())
                 .department(request.getDepartment() != null ? request.getDepartment().trim() : "Administration")
-                .subject(request.getSubject() != null ? request.getSubject().trim() : "General")
+                .departmentId(request.getDepartmentId())
+                .subject(subjectSummary)
+                .subjectSpecializations(subjects)
+                .subjectIds(subjectIdsStr)
+                .assignedClasses(classes)
+                .assignedClassIds(classIdsStr)
+                .assignedClass(classSummary)
                 .qualification(request.getQualification())
                 .designation(finalDesignation)
+                .designationId(request.getDesignationId())
                 .type(normalizedType)
                 .phone(request.getPhone().trim())
                 .email(request.getEmail().trim())
@@ -81,6 +139,25 @@ public class TeacherServiceImpl implements TeacherService {
                 .jobType(request.getJobType() == null ? com.school.management.domain.teacher.JobType.FULL_TIME : request.getJobType())
                 .avatar(request.getAvatar())
                 .status(request.getStatus() == null ? TeacherStatus.ACTIVE : request.getStatus())
+                .gender(request.getGender())
+                .dob(request.getDob())
+                .fatherName(request.getFatherName())
+                .motherName(request.getMotherName())
+                .maritalStatus(request.getMaritalStatus())
+                .contractType(request.getContractType())
+                .shift(request.getShift())
+                .workLocation(request.getWorkLocation())
+                .height(request.getHeight())
+                .weight(request.getWeight())
+                .bankAccountNumber(request.getBankAccountNumber())
+                .bankName(request.getBankName())
+                .ifscCode(request.getIfscCode())
+                .nationalIdNumber(request.getNationalIdNumber())
+                .docName(request.getDocName())
+                .prevSchoolName(request.getPrevSchoolName())
+                .prevSchoolAddress(request.getPrevSchoolAddress())
+                .permanentAddress(request.getPermanentAddress())
+                .teacherBio(request.getTeacherBio())
                 .build();
 
         TeacherEntity saved = teacherRepository.save(teacher);
@@ -91,23 +168,26 @@ public class TeacherServiceImpl implements TeacherService {
         String teacherEmail = saved.getEmail().trim();
         String teacherFullName = (saved.getFirstName() + " " + saved.getLastName()).trim();
 
-        java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
-        if (existingUser.isEmpty()) {
-            userRepository.save(UserEntity.builder()
-                    .email(teacherEmail)
-                    .password(passwordEncoder.encode(rawPassword))
-                    .name(teacherFullName)
-                    .role(targetRole)
-                    .enabled(true)
-                    .build());
-        } else {
-            UserEntity user = existingUser.get();
-            if (request.getPassword() != null && !request.getPassword().isBlank()) {
-                user.setPassword(passwordEncoder.encode(rawPassword));
+        try {
+            java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
+            if (existingUser.isEmpty()) {
+                userRepository.save(UserEntity.builder()
+                        .email(teacherEmail)
+                        .password(passwordEncoder.encode(rawPassword))
+                        .name(teacherFullName)
+                        .role(targetRole)
+                        .enabled(true)
+                        .build());
+            } else {
+                UserEntity user = existingUser.get();
+                if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                    user.setPassword(passwordEncoder.encode(rawPassword));
+                }
+                user.setName(teacherFullName);
+                user.setRole(targetRole);
+                userRepository.save(user);
             }
-            user.setName(teacherFullName);
-            user.setRole(targetRole);
-            userRepository.save(user);
+        } catch (Exception ignored) {
         }
 
         // If Principal or Staff, also sync StaffEntity so it appears in Staff / HRM modules
@@ -187,9 +267,47 @@ public class TeacherServiceImpl implements TeacherService {
         teacher.setFirstName(request.getFirstName().trim());
         teacher.setLastName(request.getLastName().trim());
         teacher.setDepartment(request.getDepartment().trim());
-        teacher.setSubject(request.getSubject().trim());
+        teacher.setDepartmentId(request.getDepartmentId());
+
+        // Update assigned classes
+        List<Long> targetClassIds = request.getAssignedClassIds() != null && !request.getAssignedClassIds().isEmpty()
+                ? request.getAssignedClassIds()
+                : request.getClassIds();
+        if (targetClassIds != null) {
+            List<SchoolClassEntity> foundClasses = schoolClassRepository.findAllById(targetClassIds);
+            teacher.setAssignedClasses(new HashSet<>(foundClasses));
+            teacher.setAssignedClassIds(targetClassIds.stream().map(String::valueOf).collect(Collectors.joining(",")));
+            String classSummary = request.getAssignedClass();
+            if (classSummary == null || classSummary.isBlank()) {
+                classSummary = foundClasses.stream()
+                        .map(c -> c.getSection() != null && !c.getSection().isBlank() ? c.getName() + " (" + c.getSection() + ")" : c.getName())
+                        .collect(Collectors.joining(", "));
+            }
+            teacher.setAssignedClass(classSummary);
+        } else if (request.getAssignedClass() != null) {
+            teacher.setAssignedClass(request.getAssignedClass());
+        }
+
+        // Update subject specializations
+        List<Long> targetSubjectIds = request.getSubjectIds();
+        if (targetSubjectIds != null) {
+            List<SubjectEntity> foundSubjects = subjectRepository.findAllById(targetSubjectIds);
+            teacher.setSubjectSpecializations(new HashSet<>(foundSubjects));
+            teacher.setSubjectIds(targetSubjectIds.stream().map(String::valueOf).collect(Collectors.joining(",")));
+            String subjectSummary = request.getSubject();
+            if (subjectSummary == null || subjectSummary.isBlank() || "General".equalsIgnoreCase(subjectSummary)) {
+                subjectSummary = foundSubjects.stream()
+                        .map(SubjectEntity::getName)
+                        .collect(Collectors.joining(", "));
+            }
+            teacher.setSubject(subjectSummary != null && !subjectSummary.isBlank() ? subjectSummary : "General");
+        } else if (request.getSubject() != null && !request.getSubject().isBlank()) {
+            teacher.setSubject(request.getSubject().trim());
+        }
+
         teacher.setQualification(request.getQualification());
         teacher.setDesignation(request.getDesignation());
+        teacher.setDesignationId(request.getDesignationId());
         teacher.setPhone(request.getPhone().trim());
         teacher.setEmail(request.getEmail().trim());
         teacher.setAddress(request.getAddress());
@@ -203,6 +321,27 @@ public class TeacherServiceImpl implements TeacherService {
         if (request.getStatus() != null) {
             teacher.setStatus(request.getStatus());
         }
+
+        // Form fields
+        if (request.getGender() != null) teacher.setGender(request.getGender());
+        if (request.getDob() != null) teacher.setDob(request.getDob());
+        if (request.getFatherName() != null) teacher.setFatherName(request.getFatherName());
+        if (request.getMotherName() != null) teacher.setMotherName(request.getMotherName());
+        if (request.getMaritalStatus() != null) teacher.setMaritalStatus(request.getMaritalStatus());
+        if (request.getContractType() != null) teacher.setContractType(request.getContractType());
+        if (request.getShift() != null) teacher.setShift(request.getShift());
+        if (request.getWorkLocation() != null) teacher.setWorkLocation(request.getWorkLocation());
+        if (request.getHeight() != null) teacher.setHeight(request.getHeight());
+        if (request.getWeight() != null) teacher.setWeight(request.getWeight());
+        if (request.getBankAccountNumber() != null) teacher.setBankAccountNumber(request.getBankAccountNumber());
+        if (request.getBankName() != null) teacher.setBankName(request.getBankName());
+        if (request.getIfscCode() != null) teacher.setIfscCode(request.getIfscCode());
+        if (request.getNationalIdNumber() != null) teacher.setNationalIdNumber(request.getNationalIdNumber());
+        if (request.getDocName() != null) teacher.setDocName(request.getDocName());
+        if (request.getPrevSchoolName() != null) teacher.setPrevSchoolName(request.getPrevSchoolName());
+        if (request.getPrevSchoolAddress() != null) teacher.setPrevSchoolAddress(request.getPrevSchoolAddress());
+        if (request.getPermanentAddress() != null) teacher.setPermanentAddress(request.getPermanentAddress());
+        if (request.getTeacherBio() != null) teacher.setTeacherBio(request.getTeacherBio());
 
         Role updatedRole = null;
         if (request.getType() != null && !request.getType().isBlank()) {
