@@ -69,6 +69,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT")
                         .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
                         .requestMatchers("/api/staff/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
+                        .requestMatchers("/api/designations/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
                         .requestMatchers("/api/holidays/**").permitAll()
                         .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
                         
