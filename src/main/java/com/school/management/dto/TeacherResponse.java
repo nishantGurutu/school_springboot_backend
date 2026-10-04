@@ -31,6 +31,7 @@ public class TeacherResponse {
     private JobType jobType;
     private String avatar;
     private TeacherStatus status;
+    private String type;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -54,6 +55,7 @@ public class TeacherResponse {
                 .jobType(teacher.getJobType())
                 .avatar(teacher.getAvatar())
                 .status(teacher.getStatus())
+                .type(teacher.getType() != null && !teacher.getType().isBlank() ? teacher.getType() : "Teacher")
                 .createdAt(teacher.getCreatedAt())
                 .updatedAt(teacher.getUpdatedAt())
                 .build();

@@ -43,11 +43,10 @@ public class MobileAppController {
     private final TimetableRepository timetableRepository;
     private final NoticeRepository noticeRepository;
     private final NoticeService noticeService;
+    private final AccountTransactionRepository accountTransactionRepository;
 
-    // Cache / fallback stores
+    // Transient student submission tracking
     private static final Map<String, String> submittedHomeworkMap = new ConcurrentHashMap<>();
-    private static final List<Map<String, Object>> customExpenses = Collections.synchronizedList(new ArrayList<>());
-    private static final List<Map<String, Object>> customAttendance = Collections.synchronizedList(new ArrayList<>());
 
     // ==========================================
     // 1. PROFILE ENDPOINTS
@@ -61,68 +60,78 @@ public class MobileAppController {
         Map<String, Object> profile = new HashMap<>();
         profile.put("id", user.getId().toString());
         profile.put("email", user.getEmail());
-        profile.put("name", user.getName());
+        profile.put("name", user.getName() != null ? user.getName() : "");
         profile.put("role", user.getRole().name().toLowerCase());
 
         if (user.getRole() == Role.STUDENT) {
             studentRepository.findByEmail(user.getEmail()).ifPresentOrElse(s -> {
                 profile.put("name", s.getName());
-                profile.put("className", s.getClassName());
-                profile.put("details", "Roll No: " + s.getRollNo() + " • " + s.getClassName());
-                profile.put("avatarUrl", s.getStudentPhoto() != null ? s.getStudentPhoto()
-                        : "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150");
-                profile.put("phone", s.getPhone());
-                profile.put("admissionNo", s.getAdmissionNo());
-                profile.put("fatherName", s.getFatherName());
+                profile.put("className", s.getClassName() != null ? s.getClassName() : "");
+                String details = "";
+                if (s.getRollNo() != null && !s.getRollNo().isBlank()) {
+                    details += "Roll No: " + s.getRollNo();
+                }
+                if (s.getClassName() != null && !s.getClassName().isBlank()) {
+                    details += (details.isEmpty() ? "" : " • ") + s.getClassName();
+                }
+                profile.put("details", details);
+                profile.put("avatarUrl", s.getStudentPhoto() != null ? s.getStudentPhoto() : "");
+                profile.put("phone", s.getPhone() != null ? s.getPhone() : "");
+                profile.put("admissionNo", s.getAdmissionNo() != null ? s.getAdmissionNo() : "");
+                profile.put("fatherName", s.getFatherName() != null ? s.getFatherName() : "");
             }, () -> {
-                profile.put("className", "Class 10-A");
-                profile.put("details", "Roll No: 24 • Class 10-A");
-                profile.put("admissionNo", "ADM-24");
-                profile.put("avatarUrl", "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150");
+                profile.put("className", "");
+                profile.put("details", "");
+                profile.put("admissionNo", "");
+                profile.put("avatarUrl", "");
+                profile.put("phone", "");
+                profile.put("fatherName", "");
             });
         } else if (user.getRole() == Role.PARENT) {
             guardianRepository.findByEmail(user.getEmail()).ifPresentOrElse(g -> {
-                profile.put("name", g.getName());
-                profile.put("className", "Parent of "
-                        + (g.getStudentAdmissionNo() != null ? g.getStudentAdmissionNo() : "Rohan Sharma"));
-                profile.put("details", "Parent of Rohan Sharma (10-A)");
-                profile.put("avatarUrl", g.getPhoto() != null ? g.getPhoto()
-                        : "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150");
-                profile.put("phone", g.getPhone());
-                profile.put("admissionNo", g.getStudentAdmissionNo() != null ? g.getStudentAdmissionNo() : "ADM-24");
+                profile.put("name", g.getName() != null ? g.getName() : user.getName());
+                String childAdm = g.getStudentAdmissionNo();
+                profile.put("className", childAdm != null && !childAdm.isBlank() ? "Parent of " + childAdm : "Parent");
+                profile.put("details", g.getGuardianType() != null ? g.getGuardianType().name() : "Guardian");
+                profile.put("avatarUrl", g.getPhoto() != null ? g.getPhoto() : "");
+                profile.put("phone", g.getPhone() != null ? g.getPhone() : "");
+                profile.put("admissionNo", childAdm != null ? childAdm : "");
             }, () -> {
-                profile.put("className", "Parent of Rohan");
-                profile.put("details", "Parent of Rohan Sharma (10-A)");
-                profile.put("admissionNo", "ADM-24");
-                profile.put("avatarUrl", "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150");
+                profile.put("className", "Parent");
+                profile.put("details", "Guardian");
+                profile.put("admissionNo", "");
+                profile.put("avatarUrl", "");
+                profile.put("phone", "");
             });
         } else if (user.getRole() == Role.TEACHER) {
             teacherRepository.findByEmail(user.getEmail()).ifPresentOrElse(t -> {
-                String fullName = (t.getFirstName() != null ? t.getFirstName() : "") + " "
-                        + (t.getLastName() != null ? t.getLastName() : "");
-                profile.put("name", fullName.trim().isEmpty() ? user.getName() : fullName.trim());
-                profile.put("className", t.getSubject() != null ? t.getSubject() + " Teacher" : "Mathematics Teacher");
-                profile.put("details", (t.getDepartment() != null ? t.getDepartment() : "Science") + " Head Teacher");
-                profile.put("avatarUrl", t.getAvatar() != null ? t.getAvatar()
-                        : "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150");
-                profile.put("phone", t.getPhone());
+                String fullName = ((t.getFirstName() != null ? t.getFirstName() : "") + " "
+                        + (t.getLastName() != null ? t.getLastName() : "")).trim();
+                profile.put("name", !fullName.isEmpty() ? fullName : user.getName());
+                profile.put("className", t.getSubject() != null && !t.getSubject().isBlank() ? t.getSubject() + " Teacher" : "Teacher");
+                profile.put("details", t.getDepartment() != null && !t.getDepartment().isBlank() ? t.getDepartment() + " Department" : "Faculty");
+                profile.put("avatarUrl", t.getAvatar() != null ? t.getAvatar() : "");
+                profile.put("phone", t.getPhone() != null ? t.getPhone() : "");
             }, () -> {
-                profile.put("className", "Maths Teacher");
-                profile.put("details", "Mathematics Head Teacher");
-                profile.put("avatarUrl", "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150");
+                profile.put("className", "Teacher");
+                profile.put("details", "Faculty");
+                profile.put("avatarUrl", "");
+                profile.put("phone", "");
             });
         } else if (user.getRole() == Role.STAFF || user.getRole() == Role.PRINCIPAL
                 || user.getRole() == Role.ACCOUNTANT || user.getRole() == Role.LIBRARIAN) {
             staffRepository.findByEmail(user.getEmail()).ifPresentOrElse(st -> {
-                profile.put("name", st.getName());
+                profile.put("name", st.getName() != null ? st.getName() : user.getName());
                 profile.put("className", st.getDesignation() != null ? st.getDesignation() : user.getRole().name());
                 profile.put("details",
                         (st.getStaffType() != null ? st.getStaffType() : "Administration") + " Staff");
-                profile.put("phone", st.getPhone());
+                profile.put("phone", st.getPhone() != null ? st.getPhone() : "");
+                profile.put("avatarUrl", "");
             }, () -> {
                 profile.put("className", user.getRole().name());
                 profile.put("details", "School Administration");
-                profile.put("avatarUrl", "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150");
+                profile.put("avatarUrl", "");
+                profile.put("phone", "");
             });
         }
 
@@ -148,43 +157,35 @@ public class MobileAppController {
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String className) {
 
-        List<Map<String, Object>> result = new ArrayList<>(customAttendance);
+        List<Map<String, Object>> result = new ArrayList<>();
 
         try {
             List<AttendanceEntity> dbEntities;
-            if (type != null && date != null) {
+            if (type != null && !type.isBlank() && date != null && !date.isBlank()) {
                 dbEntities = attendanceRepository.findByAttendanceTypeAndAttendanceDate(type.toUpperCase(), date);
                 if (dbEntities.isEmpty()) {
                     dbEntities = attendanceRepository.findByAttendanceTypeAndAttendanceDate(type.toLowerCase(), date);
                 }
-            } else if (type != null) {
+            } else if (type != null && !type.isBlank()) {
                 dbEntities = attendanceRepository.findByAttendanceType(type.toUpperCase());
                 if (dbEntities.isEmpty()) {
                     dbEntities = attendanceRepository.findByAttendanceType(type.toLowerCase());
                 }
+            } else if (date != null && !date.isBlank()) {
+                dbEntities = attendanceRepository.findAll().stream()
+                        .filter(a -> date.equals(a.getAttendanceDate()))
+                        .toList();
             } else {
                 dbEntities = attendanceRepository.findAll();
             }
 
+            if (className != null && !className.isBlank()) {
+                dbEntities = dbEntities.stream()
+                        .filter(a -> className.equalsIgnoreCase(a.getClassName()))
+                        .toList();
+            }
+
             for (AttendanceEntity entity : dbEntities) {
-                String entityDate = entity.getAttendanceDate() != null ? entity.getAttendanceDate()
-                        : LocalDate.now().toString();
-                String entityAdm = entity.getAdmissionNo();
-                String entityName = entity.getName();
-                Long entityId = entity.getId();
-
-                result.removeIf(r -> {
-                    Object rId = r.get("id");
-                    if (entityId != null && rId != null && entityId.toString().equals(rId.toString())) {
-                        return true;
-                    }
-                    String rDate = String.valueOf(r.get("date"));
-                    String rAdm = r.get("admissionNo") != null ? String.valueOf(r.get("admissionNo")) : null;
-                    String rName = r.get("name") != null ? String.valueOf(r.get("name")) : null;
-                    return entityDate.equals(rDate) && ((entityAdm != null && entityAdm.equalsIgnoreCase(rAdm)) ||
-                            (entityName != null && entityName.equalsIgnoreCase(rName)));
-                });
-
                 Map<String, Object> rec = new HashMap<>();
                 rec.put("id", entity.getId());
                 rec.put("attendanceType", entity.getAttendanceType());
@@ -194,7 +195,7 @@ public class MobileAppController {
                 rec.put("className", entity.getClassName());
                 rec.put("department", entity.getDepartment());
                 rec.put("designation", entity.getDesignation());
-                rec.put("date", entityDate);
+                rec.put("date", entity.getAttendanceDate() != null ? entity.getAttendanceDate() : "");
                 rec.put("status", entity.getStatus() != null ? entity.getStatus().toLowerCase() : "present");
                 rec.put("notes", entity.getNote());
                 rec.put("avatar", entity.getAvatar());
@@ -214,15 +215,17 @@ public class MobileAppController {
     public ResponseEntity<Map<String, Object>> markAttendance(@RequestBody Map<String, Object> req) {
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
         String date = req.getOrDefault("date", LocalDate.now().toString()).toString();
-        String name = req.getOrDefault("name", user != null ? user.getName() : "School Member").toString();
+        String name = req.getOrDefault("name", user != null ? user.getName() : "").toString();
         String rawType = req.getOrDefault("attendanceType",
-                req.getOrDefault("role", req.getOrDefault("type", "student"))).toString();
+                req.getOrDefault("role", req.getOrDefault("type", "STUDENT"))).toString();
 
         String normalizedType = "STUDENT";
         if (user != null && user.getRole() == Role.STUDENT) {
             normalizedType = "STUDENT";
-        } else if (user != null && user.getRole() == Role.STAFF) {
+        } else if (user != null && (user.getRole() == Role.STAFF || user.getRole() == Role.ACCOUNTANT || user.getRole() == Role.LIBRARIAN)) {
             normalizedType = "EMPLOYEE";
+        } else if (user != null && user.getRole() == Role.TEACHER) {
+            normalizedType = "TEACHER";
         } else if ("teacher".equalsIgnoreCase(rawType)) {
             normalizedType = "TEACHER";
         } else if ("staff".equalsIgnoreCase(rawType) || "employee".equalsIgnoreCase(rawType)) {
@@ -230,19 +233,18 @@ public class MobileAppController {
         }
 
         String status = req.getOrDefault("status", "present").toString().toLowerCase();
-        String notes = req.getOrDefault("notes", req.getOrDefault("note", "Marked via Mobile App")).toString();
-        String className = req.getOrDefault("className", "Class 10-A").toString();
-        String department = req.getOrDefault("department", "General").toString();
+        String notes = req.getOrDefault("notes", req.getOrDefault("note", "")).toString();
+        String className = req.getOrDefault("className", "").toString();
+        String department = req.getOrDefault("department", "").toString();
         String designation = req.getOrDefault("designation", "").toString();
-        String rollNo = req.getOrDefault("rollNo", req.getOrDefault("admissionNo", "24")).toString();
+        String rollNo = req.getOrDefault("rollNo", "").toString();
         String checkInTime = req.containsKey("checkInTime") && req.get("checkInTime") != null
                 ? req.get("checkInTime").toString() : null;
         String checkOutTime = req.containsKey("checkOutTime") && req.get("checkOutTime") != null
                 ? req.get("checkOutTime").toString() : null;
         String admissionNo = req.containsKey("admissionNo") && req.get("admissionNo") != null
-                && !req.get("admissionNo").toString().isBlank()
-                        ? req.get("admissionNo").toString().trim()
-                        : "ADM-" + rollNo;
+                ? req.get("admissionNo").toString().trim()
+                : (!rollNo.isEmpty() ? "ADM-" + rollNo : null);
         String avatar = req.containsKey("avatar") && req.get("avatar") != null ? req.get("avatar").toString() : null;
 
         AttendanceEntity entityToSave = AttendanceEntity.builder()
@@ -263,7 +265,8 @@ public class MobileAppController {
 
         try {
             entityToSave = attendanceRepository.save(entityToSave);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.error("Failed to save attendance record", e);
         }
 
         Map<String, Object> record = new HashMap<>();
@@ -281,7 +284,6 @@ public class MobileAppController {
         record.put("checkOutTime", checkOutTime);
         record.put("markedBy", user != null ? user.getName() : "Self");
 
-        customAttendance.add(0, record);
         return ResponseEntity.ok(record);
     }
 
@@ -307,24 +309,53 @@ public class MobileAppController {
     @Operation(summary = "Get overall attendance tracking statistics for School Admin Dashboard")
     public ResponseEntity<Map<String, Object>> getAttendanceStats() {
         Map<String, Object> stats = new HashMap<>();
-        long totalStudents = 450;
-        long presentStudents = 418;
-        long absentStudents = totalStudents - presentStudents;
-        double studentPercentage = Math.round((presentStudents * 100.0 / totalStudents) * 10.0) / 10.0;
+        String today = LocalDate.now().toString();
 
-        long totalStaff = 45;
-        long presentStaff = 42;
-        long absentStaff = totalStaff - presentStaff;
-        double staffPercentage = Math.round((presentStaff * 100.0 / totalStaff) * 10.0) / 10.0;
-        double overallPercentage = Math
-                .round(((presentStudents + presentStaff) * 100.0 / (totalStudents + totalStaff)) * 10.0) / 10.0;
+        long totalStudents = studentRepository.count();
+        List<AttendanceEntity> studentAttToday = attendanceRepository.findByAttendanceTypeAndAttendanceDate("STUDENT", today);
+        long presentStudents = studentAttToday.stream()
+                .filter(a -> "present".equalsIgnoreCase(a.getStatus()))
+                .count();
+        long absentStudents = totalStudents >= presentStudents ? totalStudents - presentStudents : 0;
+        double studentPercentage = totalStudents > 0
+                ? Math.round((presentStudents * 100.0 / totalStudents) * 10.0) / 10.0
+                : 0.0;
+
+        long totalStaff = staffRepository.count() + teacherRepository.count();
+        List<AttendanceEntity> staffAttToday = new ArrayList<>();
+        staffAttToday.addAll(attendanceRepository.findByAttendanceTypeAndAttendanceDate("EMPLOYEE", today));
+        staffAttToday.addAll(attendanceRepository.findByAttendanceTypeAndAttendanceDate("TEACHER", today));
+        long presentStaff = staffAttToday.stream()
+                .filter(a -> "present".equalsIgnoreCase(a.getStatus()))
+                .count();
+        long absentStaff = totalStaff >= presentStaff ? totalStaff - presentStaff : 0;
+        double staffPercentage = totalStaff > 0
+                ? Math.round((presentStaff * 100.0 / totalStaff) * 10.0) / 10.0
+                : 0.0;
+
+        long totalAll = totalStudents + totalStaff;
+        long presentAll = presentStudents + presentStaff;
+        double overallPercentage = totalAll > 0
+                ? Math.round((presentAll * 100.0 / totalAll) * 10.0) / 10.0
+                : 0.0;
+
+        // Class breakdown from actual registered students
+        List<StudentEntity> allStudents = studentRepository.findAll();
+        Map<String, List<StudentEntity>> studentsByClass = allStudents.stream()
+                .filter(s -> s.getClassName() != null && !s.getClassName().isBlank())
+                .collect(java.util.stream.Collectors.groupingBy(StudentEntity::getClassName));
 
         List<Map<String, Object>> classBreakdown = new ArrayList<>();
-        classBreakdown.add(createClassStat("Class 10-A", 40, 38, 2, 95.0));
-        classBreakdown.add(createClassStat("Class 10-B", 42, 39, 3, 92.8));
-        classBreakdown.add(createClassStat("Class 9-A", 38, 36, 2, 94.7));
-        classBreakdown.add(createClassStat("Class 9-B", 45, 41, 4, 91.1));
-        classBreakdown.add(createClassStat("Class 8-A", 35, 34, 1, 97.1));
+        for (Map.Entry<String, List<StudentEntity>> entry : studentsByClass.entrySet()) {
+            String cls = entry.getKey();
+            int classTotal = entry.getValue().size();
+            long classPresent = studentAttToday.stream()
+                    .filter(a -> cls.equalsIgnoreCase(a.getClassName()) && "present".equalsIgnoreCase(a.getStatus()))
+                    .count();
+            int classAbsent = classTotal >= classPresent ? (int)(classTotal - classPresent) : 0;
+            double pct = classTotal > 0 ? Math.round((classPresent * 100.0 / classTotal) * 10.0) / 10.0 : 0.0;
+            classBreakdown.add(createClassStat(cls, classTotal, (int)classPresent, classAbsent, pct));
+        }
 
         stats.put("totalStudents", totalStudents);
         stats.put("presentStudents", presentStudents);
@@ -336,7 +367,7 @@ public class MobileAppController {
         stats.put("staffPercentage", staffPercentage);
         stats.put("overallPercentage", overallPercentage);
         stats.put("classBreakdown", classBreakdown);
-        stats.put("date", LocalDate.now().toString());
+        stats.put("date", today);
 
         return ResponseEntity.ok(stats);
     }
@@ -359,53 +390,6 @@ public class MobileAppController {
     public ResponseEntity<List<Map<String, Object>>> getHomework(
             @RequestParam(required = false) String className) {
 
-        // Auto-seed initial homework records if none exist
-        if (homeworkRepository.count() == 0) {
-            homeworkRepository.save(HomeworkEntity.builder()
-                    .title("Quadratic Equations")
-                    .subject("Mathematics")
-                    .className("Class 10-A")
-                    .description("Complete questions 1 to 10 from exercises 4.2 in the classroom textbook.")
-                    .assignedDate(LocalDate.now().minusDays(1).toString())
-                    .dueDate(LocalDate.now().plusDays(2).toString())
-                    .assignedBy("Ms. Priya Sharma")
-                    .status("ACTIVE")
-                    .build());
-
-            homeworkRepository.save(HomeworkEntity.builder()
-                    .title("Solar System Project")
-                    .subject("Science")
-                    .className("Class 10-A")
-                    .description("Build a three-dimensional model of the solar system using colored clay or standard cardboard.")
-                    .assignedDate(LocalDate.now().minusDays(2).toString())
-                    .dueDate(LocalDate.now().plusDays(4).toString())
-                    .assignedBy("Dr. Verma")
-                    .status("ACTIVE")
-                    .build());
-
-            homeworkRepository.save(HomeworkEntity.builder()
-                    .title("Persuasive Essay Writing")
-                    .subject("English")
-                    .className("Class 10-A")
-                    .description("Write a 500-word essay on: The Crucial Importance of Outdoor Sports in High School.")
-                    .assignedDate(LocalDate.now().minusDays(1).toString())
-                    .dueDate(LocalDate.now().plusDays(6).toString())
-                    .assignedBy("Mrs. Kapoor")
-                    .status("ACTIVE")
-                    .build());
-
-            homeworkRepository.save(HomeworkEntity.builder()
-                    .title("French Revolution Timeline")
-                    .subject("History")
-                    .className("Class 10-A")
-                    .description("Create a chronological timeline outlining major milestones of the French Revolution between 1789 and 1799.")
-                    .assignedDate(LocalDate.now().minusDays(5).toString())
-                    .dueDate(LocalDate.now().minusDays(1).toString())
-                    .assignedBy("Mr. Anthony D")
-                    .status("ACTIVE")
-                    .build());
-        }
-
         List<HomeworkEntity> list;
         if (className != null && !className.isBlank()) {
             list = homeworkRepository.findByClassNameIgnoreCaseOrderByIdDesc(className);
@@ -416,9 +400,12 @@ public class MobileAppController {
         List<Map<String, Object>> result = new ArrayList<>();
         for (HomeworkEntity h : list) {
             String submissionStatus = submittedHomeworkMap.getOrDefault(String.valueOf(h.getId()), "pending");
-            if (h.getDueDate() != null && LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now())
-                    && "pending".equalsIgnoreCase(submissionStatus)) {
-                submissionStatus = "submitted";
+            if (h.getDueDate() != null && !h.getDueDate().isBlank()) {
+                try {
+                    if (LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now()) && "pending".equalsIgnoreCase(submissionStatus)) {
+                        submissionStatus = "submitted";
+                    }
+                } catch (Exception ignored) {}
             }
 
             Map<String, Object> item = new HashMap<>();
@@ -457,67 +444,24 @@ public class MobileAppController {
     @GetMapping("/fees")
     @Operation(summary = "Get fee records backed by PostgreSQL database")
     public ResponseEntity<List<Map<String, Object>>> getFees() {
-        // Auto-seed initial fees if table is empty
-        if (feeCollectionRepository.count() == 0) {
-            feeCollectionRepository.save(FeeCollectionEntity.builder()
-                    .admissionNo("ADM-24")
-                    .name("Rohan Sharma")
-                    .rollNo("24")
-                    .className("Class 10-A")
-                    .amount("12450.0")
-                    .paid("0")
-                    .due("12450.0")
-                    .date(LocalDate.now().plusDays(5).toString())
-                    .status("unpaid")
-                    .paymentType("Term 1 Tuition Fees")
-                    .note("Academic tuition and lab fees")
-                    .build());
-
-            feeCollectionRepository.save(FeeCollectionEntity.builder()
-                    .admissionNo("ADM-24")
-                    .name("Rohan Sharma")
-                    .rollNo("24")
-                    .className("Class 10-A")
-                    .amount("3450.0")
-                    .paid("3450.0")
-                    .due("0")
-                    .date(LocalDate.now().minusDays(8).toString())
-                    .status("paid")
-                    .paymentType("Transport Fees (May)")
-                    .note("TXN-982348271A")
-                    .build());
-
-            feeCollectionRepository.save(FeeCollectionEntity.builder()
-                    .admissionNo("ADM-24")
-                    .name("Rohan Sharma")
-                    .rollNo("24")
-                    .className("Class 10-A")
-                    .amount("1200.0")
-                    .paid("1200.0")
-                    .due("0")
-                    .date(LocalDate.now().minusDays(20).toString())
-                    .status("paid")
-                    .paymentType("Examination Fees")
-                    .note("TXN-102934812B")
-                    .build());
-        }
-
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String targetAdmissionNo = "ADM-24";
+        String targetAdmissionNo = null;
         if (user != null && user.getRole() == Role.STUDENT) {
             Optional<StudentEntity> s = studentRepository.findByEmail(user.getEmail());
-            if (s.isPresent() && s.get().getAdmissionNo() != null) {
+            if (s.isPresent()) {
                 targetAdmissionNo = s.get().getAdmissionNo();
             }
         } else if (user != null && user.getRole() == Role.PARENT) {
             Optional<GuardianEntity> g = guardianRepository.findByEmail(user.getEmail());
-            if (g.isPresent() && g.get().getStudentAdmissionNo() != null) {
+            if (g.isPresent()) {
                 targetAdmissionNo = g.get().getStudentAdmissionNo();
             }
         }
 
-        List<FeeCollectionEntity> entities = feeCollectionRepository.findByAdmissionNoIgnoreCaseOrderByIdDesc(targetAdmissionNo);
-        if (entities.isEmpty()) {
+        List<FeeCollectionEntity> entities;
+        if (targetAdmissionNo != null && !targetAdmissionNo.isBlank()) {
+            entities = feeCollectionRepository.findByAdmissionNoIgnoreCaseOrderByIdDesc(targetAdmissionNo);
+        } else {
             entities = feeCollectionRepository.findAllByOrderByIdDesc();
         }
 
@@ -526,9 +470,9 @@ public class MobileAppController {
             Map<String, Object> map = new HashMap<>();
             map.put("id", "fee_" + f.getId());
             map.put("dbId", f.getId());
-            map.put("title", f.getPaymentType() != null && !f.getPaymentType().isBlank() ? f.getPaymentType() : "Tuition Fee");
+            map.put("title", f.getPaymentType() != null && !f.getPaymentType().isBlank() ? f.getPaymentType() : "Fee");
             map.put("amount", f.getAmount() != null ? Double.parseDouble(f.getAmount()) : 0.0);
-            map.put("dueDate", f.getDate() != null ? f.getDate() : LocalDate.now().plusDays(7).toString());
+            map.put("dueDate", f.getDate() != null ? f.getDate() : "");
             map.put("status", f.getStatus() != null ? f.getStatus().toLowerCase() : "unpaid");
             if ("paid".equalsIgnoreCase(f.getStatus())) {
                 map.put("paymentDate", f.getDate());
@@ -645,9 +589,7 @@ public class MobileAppController {
                 if (entities.isEmpty()) {
                     entities = timetableRepository.findByClassNameIgnoreCase(resolvedClass);
                 }
-            }
-
-            if (entities.isEmpty()) {
+            } else {
                 entities = timetableRepository.findAll();
             }
 
@@ -686,88 +628,22 @@ public class MobileAppController {
     @GetMapping("/exams")
     @Operation(summary = "Get exam schedule & real results backed by PostgreSQL")
     public ResponseEntity<List<Map<String, Object>>> getExams() {
-        // Auto-seed initial exam schedules if empty
-        if (examScheduleRepository.count() == 0) {
-            examScheduleRepository.save(ExamScheduleEntity.builder()
-                    .examName("Term 1 Midterm Examination")
-                    .className("Class 10-A")
-                    .section("A")
-                    .subject("Mathematics")
-                    .date(LocalDate.now().plusDays(5).toString())
-                    .startTime("09:00 AM")
-                    .endTime("11:30 AM")
-                    .duration("2 Hours 30 Min")
-                    .room("Room 12")
-                    .build());
-
-            examScheduleRepository.save(ExamScheduleEntity.builder()
-                    .examName("Term 1 Science Assessment")
-                    .className("Class 10-A")
-                    .section("A")
-                    .subject("Science")
-                    .date(LocalDate.now().plusDays(8).toString())
-                    .startTime("09:00 AM")
-                    .endTime("11:30 AM")
-                    .duration("2 Hours 30 Min")
-                    .room("Room 15")
-                    .build());
-
-            examScheduleRepository.save(ExamScheduleEntity.builder()
-                    .examName("Term 1 English Literature")
-                    .className("Class 10-A")
-                    .section("A")
-                    .subject("English")
-                    .date(LocalDate.now().plusDays(11).toString())
-                    .startTime("09:00 AM")
-                    .endTime("11:30 AM")
-                    .duration("2 Hours 30 Min")
-                    .room("Room 10")
-                    .build());
-        }
-
-        // Auto-seed initial exam results if empty
-        if (examResultRepository.count() == 0) {
-            examResultRepository.save(ExamResultEntity.builder()
-                    .admissionNo("ADM-24")
-                    .name("Rohan Sharma")
-                    .rollNo("24")
-                    .className("Class 10-A")
-                    .exam("Weekly Math Quiz")
-                    .total(24)
-                    .percent(96)
-                    .grade("A+")
-                    .result("PASS")
-                    .build());
-
-            examResultRepository.save(ExamResultEntity.builder()
-                    .admissionNo("ADM-24")
-                    .name("Rohan Sharma")
-                    .rollNo("24")
-                    .className("Class 10-A")
-                    .exam("Weekly Science Test")
-                    .total(27)
-                    .percent(90)
-                    .grade("A")
-                    .result("PASS")
-                    .build());
-        }
-
         List<Map<String, Object>> exams = new ArrayList<>();
 
-        // 1. Upcoming exam schedules from DB
+        // 1. Exam schedules from DB
         List<ExamScheduleEntity> schedules = examScheduleRepository.findAllByOrderByIdDesc();
         for (ExamScheduleEntity s : schedules) {
             String title = (s.getExamName() != null && !s.getExamName().isBlank())
-                    ? s.getExamName() : (s.getClassName() + " " + s.getSubject() + " Exam");
-            String desc = s.getSubject() + " examination for " + s.getClassName();
-            String date = s.getDate() != null && !s.getDate().isBlank() ? s.getDate() : LocalDate.now().plusDays(3).toString();
-            String start = s.getStartTime() != null ? s.getStartTime() : "09:00 AM";
-            String end = s.getEndTime() != null ? s.getEndTime() : "11:30 AM";
-            String room = s.getRoom() != null ? s.getRoom() : "Room 101";
+                    ? s.getExamName() : ((s.getClassName() != null ? s.getClassName() : "") + " " + (s.getSubject() != null ? s.getSubject() : "") + " Exam").trim();
+            String desc = (s.getSubject() != null ? s.getSubject() : "") + " examination for " + (s.getClassName() != null ? s.getClassName() : "");
+            String date = s.getDate() != null && !s.getDate().isBlank() ? s.getDate() : "";
+            String start = s.getStartTime() != null ? s.getStartTime() : "";
+            String end = s.getEndTime() != null ? s.getEndTime() : "";
+            String room = s.getRoom() != null ? s.getRoom() : "";
 
             exams.add(createExam(
                     "sched_" + s.getId(),
-                    s.getSubject(),
+                    s.getSubject() != null ? s.getSubject() : "General",
                     title,
                     desc,
                     date,
@@ -777,26 +653,28 @@ public class MobileAppController {
                     100.0,
                     null,
                     "upcoming",
-                    s.getClassName()));
+                    s.getClassName() != null ? s.getClassName() : ""));
         }
 
-        // 2. Completed exam results from DB
+        // 2. Exam results from DB
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String targetAdmissionNo = "ADM-24";
+        String targetAdmissionNo = null;
         if (user != null && user.getRole() == Role.STUDENT) {
             Optional<StudentEntity> s = studentRepository.findByEmail(user.getEmail());
-            if (s.isPresent() && s.get().getAdmissionNo() != null) {
+            if (s.isPresent()) {
                 targetAdmissionNo = s.get().getAdmissionNo();
             }
         } else if (user != null && user.getRole() == Role.PARENT) {
             Optional<GuardianEntity> g = guardianRepository.findByEmail(user.getEmail());
-            if (g.isPresent() && g.get().getStudentAdmissionNo() != null) {
+            if (g.isPresent()) {
                 targetAdmissionNo = g.get().getStudentAdmissionNo();
             }
         }
 
-        List<ExamResultEntity> results = examResultRepository.findByAdmissionNoIgnoreCaseOrderByIdDesc(targetAdmissionNo);
-        if (results.isEmpty()) {
+        List<ExamResultEntity> results;
+        if (targetAdmissionNo != null && !targetAdmissionNo.isBlank()) {
+            results = examResultRepository.findByAdmissionNoIgnoreCaseOrderByIdDesc(targetAdmissionNo);
+        } else {
             results = examResultRepository.findAllByOrderByIdDesc();
         }
 
@@ -807,34 +685,34 @@ public class MobileAppController {
 
             exams.add(createExam(
                     "res_" + r.getId(),
-                    r.getExam() != null && r.getExam().toLowerCase().contains("math") ? "Mathematics" : "Science",
+                    r.getExam() != null ? r.getExam() : "Examination",
                     r.getExam() != null ? r.getExam() : "Examination Assessment",
-                    "Result: " + statusText + " (" + (r.getPercent() != null ? r.getPercent() : 85) + "%)" + gradeText,
-                    r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate().toString() : LocalDate.now().minusDays(5).toString(),
+                    "Result: " + statusText + " (" + (r.getPercent() != null ? r.getPercent() : 0) + "%)" + gradeText,
+                    r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate().toString() : LocalDate.now().toString(),
                     "09:00 AM",
                     "10:30 AM",
                     "Classroom",
                     100.0,
                     scored,
                     "completed",
-                    r.getClassName() != null ? r.getClassName() : "Class 10-A"));
+                    r.getClassName() != null ? r.getClassName() : ""));
         }
 
         return ResponseEntity.ok(exams);
     }
 
     @PostMapping("/exams")
-    @Operation(summary = "Create a new exam schedule by Teacher or Admin backed by PostgreSQL")
+    @Operation(summary = "Create a new exam schedule backed by PostgreSQL")
     public ResponseEntity<Map<String, Object>> createExam(@RequestBody Map<String, Object> req) {
-        String subject = String.valueOf(req.getOrDefault("subject", "Mathematics"));
-        String title = String.valueOf(req.getOrDefault("title", "Term Assessment"));
-        String desc = String.valueOf(req.getOrDefault("description", "Comprehensive term examination"));
-        String date = String.valueOf(req.getOrDefault("date", LocalDate.now().plusDays(7).toString()));
+        String subject = String.valueOf(req.getOrDefault("subject", ""));
+        String title = String.valueOf(req.getOrDefault("title", "Exam"));
+        String desc = String.valueOf(req.getOrDefault("description", ""));
+        String date = String.valueOf(req.getOrDefault("date", LocalDate.now().toString()));
         String start = String.valueOf(req.getOrDefault("startTime", "09:00 AM"));
         String end = String.valueOf(req.getOrDefault("endTime", "11:30 AM"));
-        String room = String.valueOf(req.getOrDefault("room", "Room 12"));
+        String room = String.valueOf(req.getOrDefault("room", ""));
         double maxMarks = Double.parseDouble(String.valueOf(req.getOrDefault("maxMarks", 100.0)));
-        String className = String.valueOf(req.getOrDefault("className", "Class 10-A"));
+        String className = String.valueOf(req.getOrDefault("className", ""));
 
         ExamScheduleEntity entity = ExamScheduleEntity.builder()
                 .examName(title)
@@ -844,7 +722,7 @@ public class MobileAppController {
                 .date(date)
                 .startTime(start)
                 .endTime(end)
-                .duration("2 Hours 30 Min")
+                .duration("2 Hours")
                 .room(room)
                 .build();
         entity = examScheduleRepository.save(entity);
@@ -858,20 +736,22 @@ public class MobileAppController {
     @Operation(summary = "Upload scored marks for an exam - persists directly to PostgreSQL ExamResultEntity")
     public ResponseEntity<Map<String, Object>> uploadExamScore(@PathVariable String id,
             @RequestBody Map<String, Object> req) {
-        double score = Double.parseDouble(String.valueOf(req.getOrDefault("scoredMarks", req.getOrDefault("score", 85.0))));
-        String studentAdm = String.valueOf(req.getOrDefault("admissionNo", "ADM-24"));
-        String studentName = String.valueOf(req.getOrDefault("name", "Rohan Sharma"));
-        String examTitle = String.valueOf(req.getOrDefault("exam", "Term Assessment"));
+        double score = Double.parseDouble(String.valueOf(req.getOrDefault("scoredMarks", req.getOrDefault("score", 0.0))));
+        String studentAdm = String.valueOf(req.getOrDefault("admissionNo", ""));
+        String studentName = String.valueOf(req.getOrDefault("name", ""));
+        String examTitle = String.valueOf(req.getOrDefault("exam", "Exam"));
+        String rollNo = String.valueOf(req.getOrDefault("rollNo", ""));
+        String className = String.valueOf(req.getOrDefault("className", ""));
 
         int percent = (int) Math.round(score);
-        String grade = percent >= 90 ? "A+" : (percent >= 80 ? "A" : (percent >= 70 ? "B" : "C"));
+        String grade = percent >= 90 ? "A+" : (percent >= 80 ? "A" : (percent >= 70 ? "B" : (percent >= 50 ? "C" : "D")));
         String result = percent >= 40 ? "PASS" : "FAIL";
 
         ExamResultEntity resultEntity = ExamResultEntity.builder()
                 .admissionNo(studentAdm)
                 .name(studentName)
-                .rollNo("24")
-                .className("Class 10-A")
+                .rollNo(rollNo)
+                .className(className)
                 .exam(examTitle)
                 .total((int) score)
                 .percent(percent)
@@ -882,47 +762,67 @@ public class MobileAppController {
 
         Map<String, Object> target = createExam("res_" + resultEntity.getId(), "General", examTitle,
                 "Marks uploaded: " + score + "/100 (" + grade + ")",
-                LocalDate.now().toString(), "09:00 AM", "11:30 AM", "Room 12", 100.0, score, "completed", "Class 10-A");
+                LocalDate.now().toString(), "09:00 AM", "11:30 AM", "Classroom", 100.0, score, "completed", className);
 
         return ResponseEntity.ok(target);
     }
 
     // ==========================================
-    // 8. EXPENSES & PAYROLL ENDPOINTS
+    // 8. EXPENSES & PAYROLL ENDPOINTS (PostgreSQL Backed)
     // ==========================================
     @GetMapping("/expenses")
-    @Operation(summary = "Get expense claims for staff")
+    @Operation(summary = "Get expense records from database")
     public ResponseEntity<List<Map<String, Object>>> getExpenses() {
-        List<Map<String, Object>> expenses = new ArrayList<>(customExpenses);
+        List<AccountTransactionEntity> transactions = accountTransactionRepository.findAllByTransactionType("EXPENSE");
+        List<Map<String, Object>> expenses = new ArrayList<>();
 
-        expenses.add(createExpense("exp_1", "Library Books Purchase", "Purchase of reference books", 5400.0, "supplies",
-                LocalDate.now().minusDays(2).toString(), "pending", "Ms. Priya (Maths Teacher)", null));
-        expenses.add(createExpense("exp_2", "Bus Fuel Refill - Route 4", "Weekly diesel refill for school bus", 3200.0,
-                "transport", LocalDate.now().minusDays(5).toString(), "pending", "Rajesh Kumar (Driver)", null));
-        expenses.add(createExpense("exp_3", "Classroom Chair Repairs", "Repair of 12 wooden chairs in Class 10-A",
-                2150.0, "maintenance", LocalDate.now().minusDays(10).toString(), "approved", "Mr. Anthony (History Teacher)",
-                "Rajesh Kumar (Accountant)"));
-        expenses.add(createExpense("exp_4", "Electricity Bill", "Monthly electricity bill payment", 12400.0,
-                "utilities", LocalDate.now().minusDays(15).toString(), "approved", "Admin Office", "Rajesh Kumar (Accountant)"));
+        for (AccountTransactionEntity t : transactions) {
+            expenses.add(createExpense(
+                    "exp_" + t.getId(),
+                    t.getDescription() != null && !t.getDescription().isBlank() ? t.getDescription() : "Expense",
+                    t.getDescription() != null ? t.getDescription() : "",
+                    t.getAmount() != null ? t.getAmount() : 0.0,
+                    t.getCategory() != null ? t.getCategory() : "general",
+                    t.getTransactionDate() != null ? t.getTransactionDate() : (t.getCreatedAt() != null ? t.getCreatedAt().toLocalDate().toString() : LocalDate.now().toString()),
+                    "approved",
+                    "Accounts",
+                    "Admin"));
+        }
 
         return ResponseEntity.ok(expenses);
     }
 
     @PostMapping("/expenses")
-    @Operation(summary = "Add expense claim")
+    @Operation(summary = "Add expense claim backed by PostgreSQL database")
     public ResponseEntity<Map<String, Object>> addExpense(@RequestBody Map<String, Object> req) {
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
         String name = user != null ? user.getName() : "Staff Member";
-        String id = "exp_" + System.currentTimeMillis();
+        String title = String.valueOf(req.getOrDefault("title", "Expense Item"));
+        String desc = String.valueOf(req.getOrDefault("description", title));
+        double amount = Double.parseDouble(String.valueOf(req.getOrDefault("amount", 0.0)));
+        String category = String.valueOf(req.getOrDefault("category", "supplies"));
+        String date = req.containsKey("date") && req.get("date") != null ? req.get("date").toString() : LocalDate.now().toString();
 
-        Map<String, Object> item = createExpense(id,
-                String.valueOf(req.getOrDefault("title", "Expense Item")),
-                String.valueOf(req.getOrDefault("description", "Claimed expense")),
-                Double.parseDouble(String.valueOf(req.getOrDefault("amount", 1000))),
-                String.valueOf(req.getOrDefault("category", "supplies")),
-                LocalDate.now().toString(), "pending", name, null);
+        AccountTransactionEntity entity = AccountTransactionEntity.builder()
+                .transactionType("EXPENSE")
+                .category(category)
+                .amount(amount)
+                .description(title + (desc.equals(title) ? "" : " - " + desc))
+                .transactionDate(date)
+                .build();
+        entity = accountTransactionRepository.save(entity);
 
-        customExpenses.add(0, item);
+        Map<String, Object> item = createExpense(
+                "exp_" + entity.getId(),
+                title,
+                desc,
+                amount,
+                category,
+                date,
+                "pending",
+                name,
+                null);
+
         return ResponseEntity.ok(item);
     }
 
@@ -932,19 +832,30 @@ public class MobileAppController {
         Map<String, Object> res = new HashMap<>();
         res.put("id", id);
         res.put("status", "approved");
-        res.put("approvedBy", "Rajesh Kumar (Accountant)");
+        res.put("approvedBy", "Accountant");
         res.put("message", "Expense approved");
         return ResponseEntity.ok(res);
     }
 
     @GetMapping("/payroll")
-    @Operation(summary = "Get payroll records for staff")
+    @Operation(summary = "Get payroll records dynamically calculated from staff database")
     public ResponseEntity<List<Map<String, Object>>> getPayroll() {
+        List<StaffEntity> staffList = staffRepository.findAll();
         List<Map<String, Object>> payrolls = new ArrayList<>();
-        payrolls.add(createPayroll("pay_1", "Rajesh Kumar", "Accountant", 48500.0, 6200.0, 42300.0, "June 2026", "processed"));
-        payrolls.add(createPayroll("pay_2", "Ms. Priya Sharma", "Maths Teacher", 52000.0, 7800.0, 44200.0, "June 2026", "processed"));
-        payrolls.add(createPayroll("pay_3", "Mr. Anthony D", "History Teacher", 49000.0, 7100.0, 41900.0, "June 2026", "processed"));
-        payrolls.add(createPayroll("pay_4", "Coach Rawat", "Physical Education", 38000.0, 5400.0, 32600.0, "June 2026", "processed"));
+        String currentMonth = LocalDate.now().getMonth().name() + " " + LocalDate.now().getYear();
+
+        for (StaffEntity s : staffList) {
+            double gross = s.getSalary() != null ? s.getSalary() : 0.0;
+            payrolls.add(createPayroll(
+                    "pay_" + s.getId(),
+                    s.getName(),
+                    s.getDesignation() != null ? s.getDesignation() : (s.getRole() != null ? s.getRole() : "Staff"),
+                    gross,
+                    0.0,
+                    gross,
+                    currentMonth,
+                    "processed"));
+        }
         return ResponseEntity.ok(payrolls);
     }
 
@@ -954,42 +865,6 @@ public class MobileAppController {
     @GetMapping("/leaves")
     @Operation(summary = "Get leave applications backed by PostgreSQL database")
     public ResponseEntity<List<Map<String, Object>>> getLeaves() {
-        // Auto-seed initial leaves if empty
-        if (leaveRequestRepository.count() == 0) {
-            leaveRequestRepository.save(LeaveRequestEntity.builder()
-                    .name("Ms. Priya Sharma")
-                    .userType("TEACHER")
-                    .leaveType("Medical")
-                    .date(LocalDate.now().plusDays(2).toString())
-                    .duration("1 Day")
-                    .status("Pending")
-                    .reason("Medical appointment - scheduled follow-up")
-                    .applyDate(LocalDate.now().minusDays(1).toString())
-                    .build());
-
-            leaveRequestRepository.save(LeaveRequestEntity.builder()
-                    .name("Mr. Anthony D")
-                    .userType("TEACHER")
-                    .leaveType("Casual")
-                    .date(LocalDate.now().plusDays(5).toString())
-                    .duration("2 Days")
-                    .status("Pending")
-                    .reason("Family function - cousin's wedding")
-                    .applyDate(LocalDate.now().minusDays(2).toString())
-                    .build());
-
-            leaveRequestRepository.save(LeaveRequestEntity.builder()
-                    .name("Coach Rawat")
-                    .userType("STAFF")
-                    .leaveType("Personal")
-                    .date(LocalDate.now().minusDays(5).toString())
-                    .duration("1 Day")
-                    .status("Approved")
-                    .reason("Personal leave - urgent personal work")
-                    .applyDate(LocalDate.now().minusDays(7).toString())
-                    .build());
-        }
-
         List<LeaveRequestEntity> entities = leaveRequestRepository.findAllByOrderByIdDesc();
         List<Map<String, Object>> leaves = new ArrayList<>();
 
@@ -1000,10 +875,10 @@ public class MobileAppController {
             m.put("employeeName", lev.getName());
             m.put("designation", lev.getUserType() != null ? lev.getUserType() : "Faculty");
             m.put("reason", lev.getReason() != null ? lev.getReason() : "Personal Leave");
-            m.put("fromDate", lev.getDate() != null ? lev.getDate() : LocalDate.now().toString());
-            m.put("toDate", lev.getDate() != null ? lev.getDate() : LocalDate.now().toString());
+            m.put("fromDate", lev.getDate() != null ? lev.getDate() : "");
+            m.put("toDate", lev.getDate() != null ? lev.getDate() : "");
             m.put("status", lev.getStatus() != null ? lev.getStatus().toLowerCase() : "pending");
-            m.put("appliedOn", lev.getApplyDate() != null ? lev.getApplyDate() : LocalDate.now().toString());
+            m.put("appliedOn", lev.getApplyDate() != null ? lev.getApplyDate() : "");
             leaves.add(m);
         }
 
@@ -1117,42 +992,12 @@ public class MobileAppController {
                 map.put("date", entity.getDate() != null && !entity.getDate().isBlank()
                         ? entity.getDate()
                         : (entity.getCreatedAt() != null ? entity.getCreatedAt().toLocalDate().toString()
-                                : LocalDate.now().toString()));
+                                : ""));
                 map.put("category", entity.getCategory() != null ? entity.getCategory().toLowerCase() : "regular");
                 map.put("target", entity.getTarget() != null ? entity.getTarget() : "ALL");
                 map.put("createdAt", entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null);
                 notices.add(map);
             }
-        }
-
-        // Seed initial notices if none exist yet
-        if (notices.isEmpty() && dbNotices.isEmpty()) {
-            NoticeEntity n1 = NoticeEntity.builder()
-                    .title("Annual Sports Day 2026 Registration Open")
-                    .content("All students and faculty members are invited to register for upcoming track and field events. Contact sports coordinator.")
-                    .category("urgent")
-                    .target("ALL")
-                    .date(LocalDate.now().toString())
-                    .build();
-            NoticeEntity n2 = NoticeEntity.builder()
-                    .title("Mid-Term Examination Schedule Notification")
-                    .content("Detailed examination timetable and guidelines have been released. Please check the examination section.")
-                    .category("academic")
-                    .target("ALL")
-                    .date(LocalDate.now().minusDays(1).toString())
-                    .build();
-            NoticeEntity n3 = NoticeEntity.builder()
-                    .title("Parent Teacher Meeting (PTM) Details")
-                    .content("A comprehensive Parent Teacher Meeting is scheduled for Monday in the main assembly hall. All parents are requested to attend.")
-                    .category("regular")
-                    .target("PARENTS")
-                    .date(LocalDate.now().minusDays(3).toString())
-                    .build();
-            noticeRepository.save(n1);
-            noticeRepository.save(n2);
-            noticeRepository.save(n3);
-
-            return getNotices();
         }
 
         return ResponseEntity.ok(notices);

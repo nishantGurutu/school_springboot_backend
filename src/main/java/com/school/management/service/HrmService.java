@@ -10,7 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -26,17 +25,15 @@ public class HrmService {
         List<StaffEntity> staffMembers = staffRepository.findAll();
 
         long totalTeachers = teachers.size();
-        long facultyStaff = Math.max(totalTeachers, 1);
+        long facultyStaff = totalTeachers;
 
         long administrativeStaff = staffMembers.stream()
                 .filter(s -> s.getStaffType() != null && s.getStaffType().equalsIgnoreCase("Accounts"))
                 .count();
-        if (administrativeStaff == 0) administrativeStaff = Math.max(staffMembers.size(), 1);
 
         long supportStaff = staffMembers.stream()
                 .filter(s -> s.getStaffType() != null && !s.getStaffType().equalsIgnoreCase("Accounts"))
                 .count();
-        if (supportStaff == 0) supportStaff = 1;
 
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalTeachers", totalTeachers);

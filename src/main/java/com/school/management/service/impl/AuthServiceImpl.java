@@ -192,13 +192,22 @@ public class AuthServiceImpl implements AuthService {
                 setField(response, "entityId", t.getId());
                 setField(response, "phone", t.getPhone());
             });
-        } else if (user.getRole() == Role.STAFF) {
-            staffRepository.findByEmail(user.getEmail()).ifPresent(st -> {
-                setField(response, "department", st.getStaffType());
-                setField(response, "className", st.getDesignation() != null ? st.getDesignation() : "Staff Member");
-                setField(response, "details", (st.getDesignation() != null ? st.getDesignation() : "Staff") + " (" + st.getStaffType() + ")");
+        } else if (user.getRole() == Role.STAFF || user.getRole() == Role.PRINCIPAL) {
+            staffRepository.findByEmail(user.getEmail()).ifPresentOrElse(st -> {
+                setField(response, "department", st.getStaffType() != null ? st.getStaffType() : "Administration");
+                setField(response, "className", st.getDesignation() != null ? st.getDesignation() : (user.getRole() == Role.PRINCIPAL ? "Principal" : "Staff Member"));
+                setField(response, "details", (st.getDesignation() != null ? st.getDesignation() : user.getRole().name()) + (st.getStaffType() != null ? " (" + st.getStaffType() + ")" : ""));
                 setField(response, "entityId", st.getId());
                 setField(response, "phone", st.getPhone());
+            }, () -> {
+                teacherRepository.findByEmail(user.getEmail()).ifPresent(t -> {
+                    setField(response, "department", t.getDepartment());
+                    setField(response, "className", t.getDesignation() != null ? t.getDesignation() : "Principal");
+                    setField(response, "details", (t.getDesignation() != null ? t.getDesignation() : "Principal") + " • " + t.getDepartment());
+                    setField(response, "avatarUrl", t.getAvatar());
+                    setField(response, "entityId", t.getId());
+                    setField(response, "phone", t.getPhone());
+                });
             });
         }
     }

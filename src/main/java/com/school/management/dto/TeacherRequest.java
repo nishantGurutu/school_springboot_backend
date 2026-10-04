@@ -67,4 +67,5 @@ public class TeacherRequest {
 
     private TeacherStatus status;
     private String password;
+    private String type; // Teacher, Principal, Staff
 }

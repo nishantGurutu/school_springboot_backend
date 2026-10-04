@@ -49,27 +49,32 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
 
                         // Teacher management - admin can manage all, teachers read-only
-                        .requestMatchers("/api/teachers/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
+                        .requestMatchers("/api/teachers/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
 
                         // Student management - admin and teachers can manage, students read-only
-                        .requestMatchers("/api/students/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/students/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
 
                         // Guardian / Parent management
-                        .requestMatchers("/api/guardians/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "PARENT")
+                        .requestMatchers("/api/guardians/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "PARENT")
 
                         // School operations modules
-                        .requestMatchers("/api/classes/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
-                        .requestMatchers("/api/exams/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
-                        .requestMatchers("/api/fees/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "PARENT")
-                        .requestMatchers("/api/attendance/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER")
-                        .requestMatchers("/api/leaves/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
-                        .requestMatchers("/api/certificates/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
-                        .requestMatchers("/api/library/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT")
-                        .requestMatchers("/api/notices/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
-                        .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
-                        .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
-                        .requestMatchers("/api/holidays/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
-                        .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/classes/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers("/api/exams/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/fees/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "TEACHER", "PARENT")
+                        .requestMatchers("/api/attendance/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers("/api/leaves/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "STAFF")
+                        .requestMatchers("/api/certificates/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/library/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "LIBRARIAN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/notices/**").permitAll()
+                        .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT")
+                        .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
+                        .requestMatchers("/api/staff/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
+                        .requestMatchers("/api/holidays/**").permitAll()
+                        .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
+                        
+                        // Mobile App Endpoints: notices and holidays can be viewed by all mobile clients
+                        .requestMatchers("/api/mobile/notices/**").permitAll()
+                        .requestMatchers("/api/mobile/holidays/**").permitAll()
                         .requestMatchers("/api/mobile/**").authenticated()
 
                         // User profile - any authenticated user

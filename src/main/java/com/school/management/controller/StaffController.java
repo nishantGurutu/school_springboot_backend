@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/hrm/staff")
+@RequestMapping({"/api/hrm/staff", "/api/staff"})
 @RequiredArgsConstructor
 @Tag(name = "Staff", description = "Staff management APIs")
 public class StaffController {

@@ -47,6 +47,10 @@ public class TeacherEntity {
     @Column(length = 64)
     private String designation;
 
+    @Column(length = 32)
+    @Builder.Default
+    private String type = "Teacher";
+
     @Column(nullable = false, length = 20)
     private String phone;
 
