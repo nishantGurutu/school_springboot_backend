@@ -80,6 +80,8 @@ public class SecurityConfig {
 
                         // User profile - any authenticated user
                         .requestMatchers("/api/profile/**").authenticated()
+                        // Master data - any authenticated user
+                        .requestMatchers("/api/master-data").authenticated()
 
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
