@@ -116,6 +116,10 @@ public class DatabaseSchemaFix {
             try {
                 jdbcTemplate.execute("DELETE FROM staff WHERE email IN ('principal@school.com', 'accountant@school.com', 'librarian@school.com')");
             } catch (Exception ignored) {}
+
+            try {
+                jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
+            } catch (Exception ignored) {}
         };
     }
 }

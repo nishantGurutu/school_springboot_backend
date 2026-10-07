@@ -133,6 +133,11 @@ public class MobileAppController {
                 profile.put("avatarUrl", "");
                 profile.put("phone", "");
             });
+        } else if (user.getRole() == Role.ADMIN || user.getRole() == Role.MASTER_ADMIN || user.getRole() == Role.SUPER_ADMIN) {
+            profile.put("className", "Admin");
+            profile.put("details", "Administrator");
+            profile.put("avatarUrl", "");
+            profile.put("phone", "");
         }
 
         return ResponseEntity.ok(profile);

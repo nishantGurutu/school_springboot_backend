@@ -209,6 +209,11 @@ public class AuthServiceImpl implements AuthService {
                     setField(response, "phone", t.getPhone());
                 });
             });
+        } else if (user.getRole() == Role.ADMIN || user.getRole() == Role.MASTER_ADMIN || user.getRole() == Role.SUPER_ADMIN) {
+            setField(response, "department", "Administration");
+            setField(response, "className", "Admin");
+            setField(response, "details", "Administrator");
+            setField(response, "avatarUrl", "");
         }
     }
 

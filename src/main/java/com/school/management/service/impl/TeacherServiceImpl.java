@@ -55,6 +55,9 @@ public class TeacherServiceImpl implements TeacherService {
             throw new DuplicateResourceException(
                     "Teacher with email '" + request.getEmail() + "' already exists");
         }
+        if ("admin@school.com".equalsIgnoreCase(request.getEmail().trim())) {
+            throw new DuplicateResourceException("Cannot register a teacher with the Super Admin email");
+        }
 
         String rawType = request.getType();
         Role targetRole = Role.TEACHER;
@@ -180,12 +183,14 @@ public class TeacherServiceImpl implements TeacherService {
                         .build());
             } else {
                 UserEntity user = existingUser.get();
-                if (request.getPassword() != null && !request.getPassword().isBlank()) {
-                    user.setPassword(passwordEncoder.encode(rawPassword));
+                if (user.getRole() != Role.ADMIN && user.getRole() != Role.MASTER_ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+                    if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                        user.setPassword(passwordEncoder.encode(rawPassword));
+                    }
+                    user.setName(teacherFullName);
+                    user.setRole(targetRole);
+                    userRepository.save(user);
                 }
-                user.setName(teacherFullName);
-                user.setRole(targetRole);
-                userRepository.save(user);
             }
         } catch (Exception ignored) {
         }
@@ -364,14 +369,16 @@ public class TeacherServiceImpl implements TeacherService {
         final Role roleToApply = updatedRole;
         String updatedEmail = updated.getEmail().trim();
         userRepository.findByEmailIgnoreCase(updatedEmail).ifPresent(user -> {
-            if (request.getPassword() != null && !request.getPassword().isBlank()) {
-                user.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+            if (user.getRole() != Role.ADMIN && user.getRole() != Role.MASTER_ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+                if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                    user.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+                }
+                user.setName((updated.getFirstName() + " " + updated.getLastName()).trim());
+                if (roleToApply != null) {
+                    user.setRole(roleToApply);
+                }
+                userRepository.save(user);
             }
-            user.setName((updated.getFirstName() + " " + updated.getLastName()).trim());
-            if (roleToApply != null) {
-                user.setRole(roleToApply);
-            }
-            userRepository.save(user);
         });
 
         // Sync to StaffEntity if applicable
