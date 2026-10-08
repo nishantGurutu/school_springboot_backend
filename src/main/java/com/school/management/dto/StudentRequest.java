@@ -162,4 +162,7 @@ public class StudentRequest {
     private String password;
     private String loginEmail;
     private String loginPassword;
+
+    // Multi-select Assigned Subject IDs
+    private java.util.List<Long> subjectIds;
 }

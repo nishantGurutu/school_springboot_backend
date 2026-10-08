@@ -70,6 +70,7 @@ public class StudentResponse {
     private LocalDate dateOfBirth;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private java.util.List<Long> subjectIds;
 
     @JsonProperty("class")
     public String getClassNameCombined() {
@@ -137,7 +138,20 @@ public class StudentResponse {
                 .dateOfBirth(s.getDateOfBirth())
                 .createdAt(s.getCreatedAt())
                 .updatedAt(s.getUpdatedAt())
+                .subjectIds(parseSubjectIds(s.getSubjectIds()))
                 .build();
+    }
+
+    private static java.util.List<Long> parseSubjectIds(String raw) {
+        if (raw == null || raw.isBlank()) return java.util.Collections.emptyList();
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (String p : raw.split(",")) {
+            try {
+                String clean = p.trim();
+                if (!clean.isEmpty()) ids.add(Long.parseLong(clean));
+            } catch (NumberFormatException ignored) {}
+        }
+        return ids;
     }
 
     private static String capitalize(String value) {

@@ -44,9 +44,313 @@ public class MobileAppController {
     private final NoticeRepository noticeRepository;
     private final NoticeService noticeService;
     private final AccountTransactionRepository accountTransactionRepository;
+    private final SubjectRepository subjectRepository;
+    private final BannerRepository bannerRepository;
+    private final GalleryAlbumRepository galleryAlbumRepository;
 
     // Transient student submission tracking
     private static final Map<String, String> submittedHomeworkMap = new ConcurrentHashMap<>();
+
+    // ==========================================
+    // 0. COMPOSITE HOME DASHBOARD ENDPOINT
+    // ==========================================
+    @GetMapping("/dashboard/home")
+    @Operation(summary = "Unified Composite Home Dashboard endpoint for Student and Parent")
+    public ResponseEntity<Map<String, Object>> getHomeDashboard(
+            @RequestParam(required = false) String admissionNo) {
+
+        UserEntity currentUser = securityUtil.getCurrentUser()
+                .orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+
+        Map<String, Object> response = new HashMap<>();
+
+        boolean isParentViewingChild = (currentUser.getRole() == Role.PARENT && admissionNo != null && !admissionNo.isBlank());
+        boolean isStudent = (currentUser.getRole() == Role.STUDENT);
+
+        if (isStudent || isParentViewingChild || currentUser.getRole() == Role.STAFF || currentUser.getRole() == Role.TEACHER) {
+            // ================= STUDENT HOME VIEW =================
+            StudentEntity student = null;
+            if (admissionNo != null && !admissionNo.isBlank()) {
+                student = studentRepository.findByAdmissionNoIgnoreCase(admissionNo.trim()).orElse(null);
+            }
+            if (student == null && isStudent) {
+                student = studentRepository.findByEmailIgnoreCase(currentUser.getEmail()).orElse(null);
+            }
+            if (student == null) {
+                student = studentRepository.findAll().stream().findFirst().orElse(null);
+            }
+
+            String studentName = student != null && student.getName() != null ? student.getName() : "Kauan Sousa";
+            String studentClass = student != null && student.getClassName() != null ? student.getClassName() : "10 - A English";
+            if (!studentClass.toLowerCase().startsWith("class")) {
+                studentClass = "Class : " + studentClass;
+            }
+            String rollNo = student != null && student.getRollNo() != null ? student.getRollNo() : "31";
+            String avatarUrl = student != null && student.getStudentPhoto() != null && !student.getStudentPhoto().isBlank()
+                    ? student.getStudentPhoto()
+                    : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80";
+
+            Map<String, Object> profile = new HashMap<>();
+            profile.put("name", studentName);
+            profile.put("className", studentClass);
+            profile.put("rollNo", rollNo);
+            profile.put("admissionNo", student != null ? student.getAdmissionNo() : "ADM-1001");
+            profile.put("avatarUrl", avatarUrl);
+            profile.put("headerSubtitle", studentClass + " | Roll No : " + rollNo);
+
+            // 1. Dynamic Banners from Database (Managed via Dashboard)
+            List<Map<String, Object>> banners = new ArrayList<>();
+            List<BannerEntity> dbBanners = bannerRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active");
+            for (BannerEntity b : dbBanners) {
+                Map<String, Object> bm = new HashMap<>();
+                bm.put("id", b.getId());
+                bm.put("title", b.getTitle());
+                bm.put("subtitle", b.getSubtitle() != null ? b.getSubtitle() : "");
+                bm.put("badge", b.getBadge() != null ? b.getBadge() : "");
+                bm.put("buttonText", b.getButtonText() != null ? b.getButtonText() : "Learn More");
+                bm.put("websiteUrl", b.getWebsiteUrl() != null ? b.getWebsiteUrl() : "");
+                bm.put("imageUrl", b.getImageUrl() != null ? b.getImageUrl() : "");
+                bm.put("bgColorHex", b.getBgColorHex() != null ? b.getBgColorHex() : "#EAB308");
+                banners.add(bm);
+            }
+
+            // 2. Dynamic Student Assigned Subjects (Selected during Add Student in Dashboard)
+            List<Map<String, Object>> subjects = new ArrayList<>();
+            List<SubjectEntity> studentSubjects = new ArrayList<>();
+            if (student != null && student.getSubjectIds() != null && !student.getSubjectIds().isBlank()) {
+                try {
+                    List<Long> sIds = Arrays.stream(student.getSubjectIds().split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .map(Long::parseLong)
+                            .toList();
+                    if (!sIds.isEmpty()) {
+                        studentSubjects = subjectRepository.findAllById(sIds);
+                    }
+                } catch (Exception ex) {
+                    log.warn("Error parsing student subject IDs: {}", ex.getMessage());
+                }
+            }
+            if (studentSubjects.isEmpty()) {
+                studentSubjects = subjectRepository.findAll();
+            }
+            for (int i = 0; i < studentSubjects.size(); i++) {
+                subjects.add(mapSubjectEntityToDashboardMap(studentSubjects.get(i), i));
+            }
+
+            // 3. Dynamic Upcoming Events from Database
+            List<Map<String, Object>> events = new ArrayList<>();
+            List<HolidayEntity> dbHolidays = holidayRepository.findAll();
+            for (int i = 0; i < Math.min(dbHolidays.size(), 4); i++) {
+                HolidayEntity h = dbHolidays.get(i);
+                Map<String, Object> ev = new HashMap<>();
+                ev.put("id", "hol_" + h.getId());
+                ev.put("title", h.getTitle());
+                ev.put("date", h.getDate() != null ? h.getDate() : "Upcoming");
+                ev.put("icon", "calendar");
+                ev.put("color", "#4F46E5");
+                events.add(ev);
+            }
+
+            // 4. Dynamic Latest Notices from Database (Top 4 notices added from Dashboard)
+            List<Map<String, Object>> notices = new ArrayList<>();
+            List<NoticeEntity> dbNotices = noticeRepository.findAllByOrderByIdDesc();
+            for (int i = 0; i < Math.min(dbNotices.size(), 4); i++) {
+                NoticeEntity ne = dbNotices.get(i);
+                Map<String, Object> n = new HashMap<>();
+                n.put("id", "not_" + ne.getId());
+                n.put("title", ne.getTitle());
+                n.put("description", ne.getContent() != null ? ne.getContent() : ne.getTitle());
+                n.put("attachmentName", (ne.getAttachment() != null && !ne.getAttachment().isBlank())
+                        ? ne.getAttachment() : null);
+                n.put("downloadUrl", (ne.getAttachment() != null && !ne.getAttachment().isBlank())
+                        ? ("/api/files/download/" + ne.getAttachment()) : null);
+                n.put("date", ne.getDate() != null && !ne.getDate().isBlank() ? ne.getDate() : "Recent");
+                notices.add(n);
+            }
+
+            // 5. Dynamic School Gallery Albums from Database (Top 4 albums added from Dashboard)
+            List<Map<String, Object>> gallery = new ArrayList<>();
+            List<GalleryAlbumEntity> dbAlbums = galleryAlbumRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active");
+            if (dbAlbums.isEmpty()) {
+                dbAlbums = galleryAlbumRepository.findAllByOrderByIdDesc();
+            }
+            for (int i = 0; i < Math.min(dbAlbums.size(), 4); i++) {
+                GalleryAlbumEntity g = dbAlbums.get(i);
+                Map<String, Object> gm = new HashMap<>();
+                gm.put("id", g.getId());
+                gm.put("title", g.getTitle());
+                gm.put("photoCount", g.getPhotoCount() != null ? g.getPhotoCount() : 1);
+                gm.put("coverImage", g.getCoverImage() != null ? g.getCoverImage() : "");
+                gallery.add(gm);
+            }
+
+            // Sections config (SDUI Feature flags)
+            Map<String, Object> sectionsConfig = new HashMap<>();
+            sectionsConfig.put("showBanners", true);
+            sectionsConfig.put("showSubjects", true);
+            sectionsConfig.put("showUpcomingEvents", true);
+            sectionsConfig.put("showLatestNotices", true);
+            sectionsConfig.put("showGallery", true);
+            sectionsConfig.put("showChildren", false);
+
+            response.put("role", isParentViewingChild ? "parent_viewing_child" : "student");
+            response.put("isParentViewing", isParentViewingChild);
+            response.put("profile", profile);
+            response.put("sectionsConfig", sectionsConfig);
+            response.put("banners", banners);
+            response.put("subjects", subjects);
+            response.put("upcomingEvents", events);
+            response.put("latestNotices", notices);
+            response.put("gallery", gallery);
+            response.put("children", Collections.emptyList());
+
+            return ResponseEntity.ok(response);
+        } else {
+            // ================= PARENT HOME VIEW (Screenshot 3) =================
+            String parentEmail = currentUser.getEmail();
+            GuardianEntity guardian = guardianRepository.findByEmailIgnoreCase(parentEmail).orElse(null);
+            String parentName = guardian != null && guardian.getName() != null ? guardian.getName() : currentUser.getName();
+            if (parentName == null || parentName.isBlank()) {
+                parentName = "Amber Wayt";
+            }
+            String parentAvatar = guardian != null && guardian.getPhoto() != null ? guardian.getPhoto() : "";
+
+            Map<String, Object> profile = new HashMap<>();
+            profile.put("name", parentName);
+            profile.put("email", parentEmail);
+            profile.put("avatarUrl", parentAvatar);
+
+            // Query all children for this parent
+            Set<String> admissionSet = new HashSet<>();
+            List<StudentEntity> childrenEntities = new ArrayList<>(studentRepository.findByGuardianEmailIgnoreCase(parentEmail));
+            for (StudentEntity s : childrenEntities) {
+                admissionSet.add(s.getAdmissionNo());
+            }
+
+            if (guardian != null && guardian.getStudentAdmissionNo() != null && !guardian.getStudentAdmissionNo().isBlank()) {
+                String[] parts = guardian.getStudentAdmissionNo().split(",");
+                for (String p : parts) {
+                    String adm = p.trim();
+                    if (!adm.isEmpty() && !admissionSet.contains(adm)) {
+                        studentRepository.findByAdmissionNoIgnoreCase(adm).ifPresent(s -> {
+                            childrenEntities.add(s);
+                            admissionSet.add(adm);
+                        });
+                    }
+                }
+            }
+
+            List<Map<String, Object>> children = new ArrayList<>();
+            if (childrenEntities.isEmpty()) {
+                Map<String, Object> child1 = new HashMap<>();
+                child1.put("id", "1");
+                child1.put("name", "Kauan Sousa");
+                child1.put("className", "Class - 10 - A English");
+                child1.put("rollNo", "31");
+                child1.put("admissionNo", "ADM-1001");
+                child1.put("avatarUrl", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
+                children.add(child1);
+            } else {
+                for (StudentEntity s : childrenEntities) {
+                    Map<String, Object> c = new HashMap<>();
+                    c.put("id", String.valueOf(s.getId()));
+                    c.put("name", s.getName());
+                    String cls = s.getClassName() != null ? s.getClassName() : "10 - A English";
+                    c.put("className", cls.startsWith("Class") ? cls : "Class - " + cls);
+                    c.put("rollNo", s.getRollNo() != null ? s.getRollNo() : "");
+                    c.put("admissionNo", s.getAdmissionNo());
+                    c.put("avatarUrl", s.getStudentPhoto() != null && !s.getStudentPhoto().isBlank()
+                            ? s.getStudentPhoto()
+                            : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
+                    children.add(c);
+                }
+            }
+
+            Map<String, Object> sectionsConfig = new HashMap<>();
+            sectionsConfig.put("showChildren", true);
+            sectionsConfig.put("showBanners", false);
+            sectionsConfig.put("showSubjects", false);
+            sectionsConfig.put("showUpcomingEvents", false);
+            sectionsConfig.put("showLatestNotices", false);
+            sectionsConfig.put("showGallery", false);
+
+            response.put("role", "parent");
+            response.put("isParentViewing", false);
+            response.put("profile", profile);
+            response.put("sectionsConfig", sectionsConfig);
+            response.put("children", children);
+            response.put("banners", Collections.emptyList());
+            response.put("subjects", Collections.emptyList());
+            response.put("upcomingEvents", Collections.emptyList());
+            response.put("latestNotices", Collections.emptyList());
+            response.put("gallery", Collections.emptyList());
+
+            return ResponseEntity.ok(response);
+        }
+    }
+
+    private Map<String, Object> createSubjectMap(int id, String name, String code, String type, String color, String secColor, String icon) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", id);
+        map.put("name", name);
+        map.put("code", code);
+        map.put("type", type);
+        map.put("colorHex", color);
+        map.put("secondaryColorHex", secColor);
+        map.put("icon", icon);
+        return map;
+    }
+
+    private Map<String, Object> mapSubjectEntityToDashboardMap(SubjectEntity sub, int index) {
+        String name = sub.getName() != null ? sub.getName() : "Subject";
+        String code = sub.getCode() != null ? sub.getCode() : "SUB";
+        String lower = name.toLowerCase();
+
+        String color = "#0284C7";
+        String secColor = "#0369A1";
+        String icon = "book";
+
+        if (lower.contains("english")) {
+            color = "#E11D48";
+            secColor = "#FB7185";
+            icon = "book";
+        } else if (lower.contains("math")) {
+            color = "#059669";
+            secColor = "#34D399";
+            icon = "math";
+        } else if (lower.contains("science") || lower.contains("bio") || lower.contains("chem") || lower.contains("phy")) {
+            color = "#65A30D";
+            secColor = "#A3E635";
+            icon = "science";
+        } else if (lower.contains("physical") || lower.contains("sport") || lower.contains("ped")) {
+            color = "#7C3AED";
+            secColor = "#A78BFA";
+            icon = "sports";
+        } else if (lower.contains("hindi") || lower.contains("sanskrit") || lower.contains("urdu")) {
+            color = "#4F46E5";
+            secColor = "#818CF8";
+            icon = "hindi";
+        } else if (lower.contains("music") || lower.contains("art") || lower.contains("dance")) {
+            color = "#EA580C";
+            secColor = "#FB923C";
+            icon = "music";
+        } else {
+            String[] palette = new String[]{"#0284C7", "#0D9488", "#D97706", "#9333EA", "#2563EB", "#0891B2"};
+            color = palette[index % palette.length];
+            secColor = color;
+        }
+
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", sub.getId());
+        map.put("name", name);
+        map.put("code", code);
+        map.put("type", "Theory");
+        map.put("colorHex", color);
+        map.put("secondaryColorHex", secColor);
+        map.put("icon", icon);
+        return map;
+    }
 
     // ==========================================
     // 1. PROFILE ENDPOINTS

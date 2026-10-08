@@ -67,6 +67,9 @@ public class GuardianServiceImpl implements GuardianService {
         String pass = (request.getPassword() != null && !request.getPassword().isBlank()) ? request.getPassword() : "password";
         createParentLogin(email, name, pass);
 
+        // Link student records with this guardian's details
+        linkStudentsToGuardian(saved.getStudentAdmissionNo(), saved.getEmail(), saved.getName(), saved.getPhone());
+
         return GuardianResponse.fromEntity(saved, resolveStudentName(saved.getStudentAdmissionNo()));
     }
 
@@ -144,7 +147,12 @@ public class GuardianServiceImpl implements GuardianService {
                     user.setPassword(passwordEncoder.encode(request.getPassword())));
         }
 
-        return GuardianResponse.fromEntity(guardianRepository.save(guardian), resolveStudentName(guardian.getStudentAdmissionNo()));
+        GuardianEntity updated = guardianRepository.save(guardian);
+
+        // Sync student links
+        linkStudentsToGuardian(updated.getStudentAdmissionNo(), updated.getEmail(), updated.getName(), updated.getPhone());
+
+        return GuardianResponse.fromEntity(updated, resolveStudentName(guardian.getStudentAdmissionNo()));
     }
 
     @Override
@@ -161,8 +169,30 @@ public class GuardianServiceImpl implements GuardianService {
         if (admissionNo == null || admissionNo.isBlank()) {
             return;
         }
-        if (studentRepository.findByAdmissionNo(admissionNo).isEmpty()) {
-            throw new BadRequestException("No student found with admission number '" + admissionNo + "'");
+        String[] parts = admissionNo.split(",");
+        for (String part : parts) {
+            String adm = part.trim();
+            if (!adm.isEmpty() && studentRepository.findByAdmissionNo(adm).isEmpty() && studentRepository.findByAdmissionNoIgnoreCase(adm).isEmpty()) {
+                throw new BadRequestException("No student found with admission number '" + adm + "'");
+            }
+        }
+    }
+
+    private void linkStudentsToGuardian(String admissionNoStr, String guardianEmail, String guardianName, String guardianPhone) {
+        if (admissionNoStr == null || admissionNoStr.isBlank()) {
+            return;
+        }
+        String[] parts = admissionNoStr.split(",");
+        for (String part : parts) {
+            String adm = part.trim();
+            if (!adm.isEmpty()) {
+                studentRepository.findByAdmissionNoIgnoreCase(adm).ifPresent(s -> {
+                    s.setGuardianEmail(guardianEmail);
+                    if (guardianName != null && !guardianName.isBlank()) s.setGuardianName(guardianName);
+                    if (guardianPhone != null && !guardianPhone.isBlank()) s.setGuardianPhone(guardianPhone);
+                    studentRepository.save(s);
+                });
+            }
         }
     }
 

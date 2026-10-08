@@ -29,6 +29,10 @@ public interface StudentRepository extends JpaRepository<StudentEntity, Long> {
 
     List<StudentEntity> findAllByAdmissionNoIn(List<String> admissionNos);
 
+    List<StudentEntity> findByGuardianEmailIgnoreCase(String guardianEmail);
+
+    List<StudentEntity> findByGuardianEmail(String guardianEmail);
+
     boolean existsByAdmissionNo(String admissionNo);
 
     boolean existsByEmail(String email);

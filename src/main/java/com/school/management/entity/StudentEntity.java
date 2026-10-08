@@ -56,6 +56,10 @@ public class StudentEntity {
     @Column(length = 32)
     private String academicYear;
 
+    // Multi-select Assigned Subject IDs (comma-separated, e.g. "1,2,5")
+    @Column(name = "subject_ids", length = 500)
+    private String subjectIds;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private Gender gender;

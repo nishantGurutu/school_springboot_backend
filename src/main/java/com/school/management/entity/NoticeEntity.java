@@ -36,6 +36,9 @@ public class NoticeEntity {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    @Column(length = 255)
+    private String attachment;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

@@ -9,6 +9,9 @@ import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.domain.user.Role;
 import com.school.management.entity.UserEntity;
+import com.school.management.domain.guardian.GuardianType;
+import com.school.management.entity.GuardianEntity;
+import com.school.management.repository.GuardianRepository;
 import com.school.management.repository.StudentRepository;
 import com.school.management.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,6 +40,7 @@ public class StudentServiceImpl implements StudentService {
 
     private final StudentRepository studentRepository;
     private final UserRepository userRepository;
+    private final GuardianRepository guardianRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -86,22 +90,10 @@ public class StudentServiceImpl implements StudentService {
             userRepository.save(user);
         }
 
-        // Auto-create/sync PARENT login account if guardian email is provided
-        if (saved.getGuardianEmail() != null && !saved.getGuardianEmail().isBlank()) {
-            String gEmail = saved.getGuardianEmail().trim();
-            if (!userRepository.existsByEmail(gEmail)) {
-                String gName = (saved.getGuardianName() != null && !saved.getGuardianName().isBlank())
-                        ? saved.getGuardianName().trim()
-                        : "Parent of " + saved.getName();
-                userRepository.save(UserEntity.builder()
-                        .email(gEmail)
-                        .password(passwordEncoder.encode("password"))
-                        .name(gName)
-                        .role(Role.PARENT)
-                        .enabled(true)
-                        .build());
-            }
-        }
+        // Auto-create/sync PARENT login account and Guardian directory record if guardian email is provided
+        syncParentAccountAndGuardian(saved, (request.getPassword() != null && !request.getPassword().isBlank())
+                ? request.getPassword().trim()
+                : ((request.getLoginPassword() != null && !request.getLoginPassword().isBlank()) ? request.getLoginPassword().trim() : "password"));
 
         return StudentResponse.fromEntity(saved);
     }
@@ -171,6 +163,9 @@ public class StudentServiceImpl implements StudentService {
             user.setRole(Role.STUDENT);
             userRepository.save(user);
         });
+
+        // Sync Parent account and Guardian record
+        syncParentAccountAndGuardian(updated, rawPassword);
 
         return StudentResponse.fromEntity(updated);
     }
@@ -265,6 +260,12 @@ public class StudentServiceImpl implements StudentService {
         if (r.getStatus() != null) {
             e.setStatus(r.getStatus());
         }
+        if (r.getSubjectIds() != null) {
+            String subjectIdsStr = r.getSubjectIds().stream()
+                    .map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            e.setSubjectIds(subjectIdsStr);
+        }
         return e;
     }
 
@@ -323,5 +324,75 @@ public class StudentServiceImpl implements StudentService {
         String field = sortBy == null || sortBy.isBlank() ? "id" : sortBy;
         Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
         return PageRequest.of(safePage, safeSize, Sort.by(direction, field));
+    }
+
+    private void syncParentAccountAndGuardian(StudentEntity student, String parentPassword) {
+        if (student.getGuardianEmail() == null || student.getGuardianEmail().isBlank()) {
+            return;
+        }
+        String gEmail = student.getGuardianEmail().trim();
+        String gName = (student.getGuardianName() != null && !student.getGuardianName().isBlank())
+                ? student.getGuardianName().trim()
+                : "Parent of " + student.getName();
+        String pass = (parentPassword != null && !parentPassword.isBlank()) ? parentPassword.trim() : "password";
+
+        // 1. Sync UserEntity (PARENT role login)
+        java.util.Optional<UserEntity> userOpt = userRepository.findByEmailIgnoreCase(gEmail);
+        if (userOpt.isEmpty()) {
+            userRepository.save(UserEntity.builder()
+                    .email(gEmail)
+                    .password(passwordEncoder.encode(pass))
+                    .name(gName)
+                    .role(Role.PARENT)
+                    .enabled(true)
+                    .build());
+        } else {
+            UserEntity u = userOpt.get();
+            u.setRole(Role.PARENT);
+            if (parentPassword != null && !parentPassword.isBlank()) {
+                u.setPassword(passwordEncoder.encode(pass));
+            }
+            userRepository.save(u);
+        }
+
+        // 2. Sync GuardianEntity (Guardian Directory record)
+        java.util.Optional<GuardianEntity> gOpt = guardianRepository.findByEmailIgnoreCase(gEmail);
+        GuardianType gType = GuardianType.FATHER;
+        if (student.getGuardianRelation() != null) {
+            try {
+                gType = GuardianType.valueOf(student.getGuardianRelation().trim().toUpperCase());
+            } catch (Exception ignored) {
+                gType = GuardianType.OTHER;
+            }
+        }
+
+        if (gOpt.isEmpty()) {
+            GuardianEntity newGuardian = GuardianEntity.builder()
+                    .guardianType(gType)
+                    .name(gName)
+                    .phone(student.getGuardianPhone())
+                    .email(gEmail)
+                    .occupation(student.getGuardianOccupation())
+                    .address(student.getGuardianAddress())
+                    .feeStatus("Clear")
+                    .studentAdmissionNo(student.getAdmissionNo())
+                    .build();
+            guardianRepository.save(newGuardian);
+        } else {
+            GuardianEntity existing = gOpt.get();
+            if (existing.getName() == null || existing.getName().isBlank()) {
+                existing.setName(gName);
+            }
+            if (student.getGuardianPhone() != null && !student.getGuardianPhone().isBlank()) {
+                existing.setPhone(student.getGuardianPhone());
+            }
+            String currAdm = existing.getStudentAdmissionNo();
+            if (currAdm == null || currAdm.isBlank()) {
+                existing.setStudentAdmissionNo(student.getAdmissionNo());
+            } else if (!currAdm.contains(student.getAdmissionNo())) {
+                existing.setStudentAdmissionNo(currAdm + ", " + student.getAdmissionNo());
+            }
+            guardianRepository.save(existing);
+        }
     }
 }
