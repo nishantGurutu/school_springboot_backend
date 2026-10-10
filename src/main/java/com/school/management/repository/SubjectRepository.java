@@ -8,4 +8,10 @@ import org.springframework.stereotype.Repository;
 public interface SubjectRepository extends JpaRepository<SubjectEntity, Long> {
 
     boolean existsByCode(String code);
+
+    java.util.List<SubjectEntity> findByNameIgnoreCase(String name);
+
+    java.util.List<SubjectEntity> findByClassNameIgnoreCase(String className);
+
+    java.util.List<SubjectEntity> findByClassNameIgnoreCaseOrClassNameIsNull(String className);
 }

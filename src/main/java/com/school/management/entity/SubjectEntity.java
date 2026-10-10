@@ -34,6 +34,9 @@ public class SubjectEntity {
     @Column(nullable = false, length = 16)
     private String status = "Active";
 
+    @Column(name = "class_name", length = 64)
+    private String className;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

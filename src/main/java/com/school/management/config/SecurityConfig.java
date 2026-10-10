@@ -73,6 +73,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/holidays/**").permitAll()
                         .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
                         
+                        // File storage & downloads
+                        .requestMatchers("/api/files/**").permitAll()
+
+                        // Teacher Curriculum & Notes Management
+                        .requestMatchers("/api/teacher/curriculum/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "ADMIN")
+
                         // Mobile App Endpoints: notices and holidays can be viewed by all mobile clients
                         .requestMatchers("/api/mobile/notices/**").permitAll()
                         .requestMatchers("/api/mobile/holidays/**").permitAll()

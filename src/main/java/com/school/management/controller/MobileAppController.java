@@ -47,6 +47,7 @@ public class MobileAppController {
     private final SubjectRepository subjectRepository;
     private final BannerRepository bannerRepository;
     private final GalleryAlbumRepository galleryAlbumRepository;
+    private final com.school.management.service.CurriculumService curriculumService;
 
     // Transient student submission tracking
     private static final Map<String, String> submittedHomeworkMap = new ConcurrentHashMap<>();
@@ -1310,6 +1311,48 @@ public class MobileAppController {
         }
 
         return ResponseEntity.ok(notices);
+    }
+
+    // ==========================================
+    // 11. SUBJECT CURRICULUM & STUDY NOTES
+    // ==========================================
+    @GetMapping("/subjects/{subjectId}/curriculum")
+    @Operation(summary = "Get curriculum (chapters, topics, and notes count) for a subject filtered by student class")
+    public ResponseEntity<Map<String, Object>> getSubjectCurriculum(
+            @PathVariable Long subjectId,
+            @RequestParam(required = false) String admissionNo) {
+
+        UserEntity currentUser = securityUtil.getCurrentUser().orElse(null);
+        String studentClass = null;
+
+        if (currentUser != null && currentUser.getRole() == Role.STUDENT) {
+            StudentEntity student = studentRepository.findByEmailIgnoreCase(currentUser.getEmail()).orElse(null);
+            if (student != null) {
+                studentClass = student.getClassName();
+            }
+        } else if (admissionNo != null && !admissionNo.isBlank()) {
+            StudentEntity student = studentRepository.findByAdmissionNoIgnoreCase(admissionNo.trim()).orElse(null);
+            if (student != null) {
+                studentClass = student.getClassName();
+            }
+        }
+
+        Map<String, Object> curriculum = curriculumService.getSubjectCurriculumForStudent(subjectId, studentClass);
+        return ResponseEntity.ok(curriculum);
+    }
+
+    @GetMapping("/chapters/{chapterId}/notes")
+    @Operation(summary = "Get study notes and learning materials for a specific chapter")
+    public ResponseEntity<Map<String, Object>> getChapterNotes(@PathVariable Long chapterId) {
+        Map<String, Object> notes = curriculumService.getChapterNotesForStudent(chapterId);
+        return ResponseEntity.ok(notes);
+    }
+
+    @GetMapping("/topics/{topicId}/notes")
+    @Operation(summary = "Get study notes and learning materials for a specific topic")
+    public ResponseEntity<Map<String, Object>> getTopicNotes(@PathVariable Long topicId) {
+        Map<String, Object> notes = curriculumService.getTopicNotesForStudent(topicId);
+        return ResponseEntity.ok(notes);
     }
 
     // ==========================================
