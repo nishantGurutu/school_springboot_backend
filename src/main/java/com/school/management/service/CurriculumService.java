@@ -12,7 +12,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.*;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class CurriculumService {
@@ -25,6 +24,24 @@ public class CurriculumService {
     private final FileStorageService fileStorageService;
     private final StudentRepository studentRepository;
     private final com.school.management.util.SecurityUtil securityUtil;
+
+    public CurriculumService(SubjectRepository subjectRepository,
+                             SubjectChapterRepository chapterRepository,
+                             SubjectTopicRepository topicRepository,
+                             TopicNoteRepository noteRepository,
+                             TeacherRepository teacherRepository,
+                             FileStorageService fileStorageService,
+                             StudentRepository studentRepository,
+                             com.school.management.util.SecurityUtil securityUtil) {
+        this.subjectRepository = subjectRepository;
+        this.chapterRepository = chapterRepository;
+        this.topicRepository = topicRepository;
+        this.noteRepository = noteRepository;
+        this.teacherRepository = teacherRepository;
+        this.fileStorageService = fileStorageService;
+        this.studentRepository = studentRepository;
+        this.securityUtil = securityUtil;
+    }
 
     private StudentEntity currentStudent() {
         var user = securityUtil.getCurrentUser().orElseThrow(() -> new com.school.management.exceptions.UnauthorizedException("Not authenticated"));
@@ -139,68 +156,72 @@ public class CurriculumService {
 
         if (subjectId != null) {
             if (hasClass) {
-                chapters = chapterRepository.findBySubjectIdAndClassNameIgnoreCaseOrderByDisplayOrderAsc(subjectId, className.trim());
+                chapters = chapterRepository.findBySubjectIdAndClassNameFlexible(subjectId, className.trim());
             } else {
                 chapters = chapterRepository.findBySubjectIdOrderByDisplayOrderAsc(subjectId);
             }
         } else {
             if (hasClass) {
-                chapters = chapterRepository.findByClassNameIgnoreCaseOrderByDisplayOrderAsc(className.trim());
+                chapters = chapterRepository.findByClassNameFlexible(className.trim());
             } else {
                 chapters = chapterRepository.findAll();
             }
         }
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (SubjectChapterEntity ch : chapters) {
-            Map<String, Object> chMap = new HashMap<>();
-            chMap.put("id", ch.getId());
-            chMap.put("chapterNumber", ch.getChapterNumber());
-            chMap.put("chapterTitle", ch.getChapterTitle());
-            chMap.put("className", ch.getClassName());
-            chMap.put("description", ch.getDescription());
-            chMap.put("displayOrder", ch.getDisplayOrder());
+        return chapters.stream().map(this::mapChapterToDto).toList();
+    }
 
-            if (ch.getSubject() != null) {
-                chMap.put("subjectId", ch.getSubject().getId());
-                chMap.put("subjectName", ch.getSubject().getName());
-                chMap.put("subjectCode", ch.getSubject().getCode());
-            }
+    public Map<String, Object> mapChapterToDto(SubjectChapterEntity ch) {
+        Map<String, Object> chMap = new HashMap<>();
+        chMap.put("id", ch.getId());
+        chMap.put("chapterNumber", ch.getChapterNumber());
+        chMap.put("chapterTitle", ch.getChapterTitle());
+        chMap.put("className", ch.getClassName());
+        chMap.put("description", ch.getDescription());
+        chMap.put("displayOrder", ch.getDisplayOrder());
 
-            List<TopicNoteEntity> chapterNotes = noteRepository.findByChapterIdOrderByCreatedAtDesc(ch.getId());
-            chMap.put("notes", chapterNotes.stream().map(this::mapNoteToDto).toList());
-            chMap.put("notesCount", chapterNotes.size());
-
-            List<SubjectTopicEntity> topics = topicRepository.findByChapterIdOrderByDisplayOrderAsc(ch.getId());
-            List<Map<String, Object>> topicMaps = new ArrayList<>();
-            for (SubjectTopicEntity t : topics) {
-                Map<String, Object> tm = new HashMap<>();
-                tm.put("id", t.getId());
-                tm.put("title", t.getTitle());
-                tm.put("description", t.getDescription());
-                tm.put("difficulty", t.getDifficulty());
-                tm.put("estimatedMinutes", t.getEstimatedMinutes());
-                tm.put("displayOrder", t.getDisplayOrder());
-                tm.put("status", t.getStatus());
-
-                List<TopicNoteEntity> notes = noteRepository.findByTopicIdOrderByCreatedAtDesc(t.getId());
-                tm.put("notesCount", notes.size());
-                tm.put("notes", notes.stream().map(this::mapNoteToDto).toList());
-                topicMaps.add(tm);
-            }
-            chMap.put("topics", topicMaps);
-            result.add(chMap);
+        if (ch.getSubject() != null) {
+            chMap.put("subjectId", ch.getSubject().getId());
+            chMap.put("subjectName", ch.getSubject().getName());
+            chMap.put("subjectCode", ch.getSubject().getCode());
         }
-        return result;
+
+        List<TopicNoteEntity> chapterNotes = noteRepository.findByChapterIdOrderByCreatedAtDesc(ch.getId());
+        chMap.put("notes", chapterNotes.stream().map(this::mapNoteToDto).toList());
+        chMap.put("notesCount", chapterNotes.size());
+
+        List<SubjectTopicEntity> topics = topicRepository.findByChapterIdOrderByDisplayOrderAsc(ch.getId());
+        List<Map<String, Object>> topicMaps = new ArrayList<>();
+        for (SubjectTopicEntity t : topics) {
+            Map<String, Object> tm = new HashMap<>();
+            tm.put("id", t.getId());
+            tm.put("title", t.getTitle());
+            tm.put("description", t.getDescription());
+            tm.put("difficulty", t.getDifficulty());
+            tm.put("estimatedMinutes", t.getEstimatedMinutes());
+            tm.put("displayOrder", t.getDisplayOrder());
+            tm.put("status", t.getStatus());
+
+            List<TopicNoteEntity> notes = noteRepository.findByTopicIdOrderByCreatedAtDesc(t.getId());
+            tm.put("notesCount", notes.size());
+            tm.put("notes", notes.stream().map(this::mapNoteToDto).toList());
+            topicMaps.add(tm);
+        }
+        chMap.put("topics", topicMaps);
+        return chMap;
     }
 
     public SubjectChapterEntity createChapter(Long subjectId, String className, String chapterNumber, String title, String desc, Integer order) {
         SubjectEntity subject = subjectRepository.findById(subjectId)
                 .orElseThrow(() -> new ResourceNotFoundException("Subject not found: " + subjectId));
 
+        String effectiveClass = (className != null && !className.isBlank())
+                ? className.trim()
+                : (subject.getClassName() != null && !subject.getClassName().isBlank() ? subject.getClassName().trim() : "All");
+
         SubjectChapterEntity entity = SubjectChapterEntity.builder()
                 .subject(subject)
-                .className(className != null ? className.trim() : "All")
+                .className(effectiveClass)
                 .chapterNumber(chapterNumber != null && !chapterNumber.isBlank() ? chapterNumber.trim() : "Chapter 1")
                 .chapterTitle(title.trim())
                 .description(desc)
@@ -210,12 +231,22 @@ public class CurriculumService {
     }
 
     public SubjectChapterEntity updateChapter(Long id, String chapterNumber, String title, String desc, Integer order) {
+        return updateChapter(id, chapterNumber, title, desc, order, null, null);
+    }
+
+    public SubjectChapterEntity updateChapter(Long id, String chapterNumber, String title, String desc, Integer order, String className, Long subjectId) {
         SubjectChapterEntity entity = chapterRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + id));
-        if (chapterNumber != null) entity.setChapterNumber(chapterNumber.trim());
-        if (title != null) entity.setChapterTitle(title.trim());
+        if (chapterNumber != null && !chapterNumber.isBlank()) entity.setChapterNumber(chapterNumber.trim());
+        if (title != null && !title.isBlank()) entity.setChapterTitle(title.trim());
         if (desc != null) entity.setDescription(desc);
         if (order != null) entity.setDisplayOrder(order);
+        if (className != null && !className.isBlank()) entity.setClassName(className.trim());
+        if (subjectId != null) {
+            SubjectEntity subject = subjectRepository.findById(subjectId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Subject not found: " + subjectId));
+            entity.setSubject(subject);
+        }
         return chapterRepository.save(entity);
     }
 

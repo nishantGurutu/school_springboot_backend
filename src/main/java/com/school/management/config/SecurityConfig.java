@@ -2,7 +2,6 @@ package com.school.management.config;
 
 import com.school.management.security.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -24,11 +23,15 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final UserDetailsService userDetailsService;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, UserDetailsService userDetailsService) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.userDetailsService = userDetailsService;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -91,7 +94,8 @@ public class SecurityConfig {
                         .hasAnyRole("TEACHER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
 
                         // Teacher Curriculum & Notes Management
-                        .requestMatchers("/api/teacher/curriculum/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "ADMIN")
+                        .requestMatchers("/api/teacher/curriculum/**")
+                        .hasAnyRole("TEACHER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
 
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/mobile/exams/**")
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")

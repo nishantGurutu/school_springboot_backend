@@ -1,8 +1,6 @@
 package com.school.management.controller;
 
-import com.school.management.domain.user.Role;
 import com.school.management.entity.*;
-import com.school.management.exceptions.UnauthorizedException;
 import com.school.management.service.CurriculumService;
 import com.school.management.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,7 +26,8 @@ public class TeacherCurriculumController {
     private final CurriculumService curriculumService;
     private final SecurityUtil securityUtil;
 
-    // 1. Get subjects assigned to the logged-in teacher (optionally filtered by class)
+    // 1. Get subjects assigned to the logged-in teacher (optionally filtered by
+    // class)
     @GetMapping("/subjects")
     @Operation(summary = "Get subjects assigned to the logged in teacher or class")
     public ResponseEntity<List<Map<String, Object>>> getTeacherSubjects(
@@ -81,28 +80,112 @@ public class TeacherCurriculumController {
     // 3. Create chapter
     @PostMapping("/chapters")
     @Operation(summary = "Create a new chapter under a subject")
-    public ResponseEntity<SubjectChapterEntity> createChapter(@RequestBody Map<String, Object> req) {
-        Long subjectId = Long.valueOf(req.get("subjectId").toString());
-        String className = (String) req.get("className");
-        String chapterNumber = (String) req.get("chapterNumber");
-        String title = (String) req.get("chapterTitle");
-        String desc = (String) req.get("description");
-        Integer order = req.get("displayOrder") != null ? Integer.valueOf(req.get("displayOrder").toString()) : 1;
+    public ResponseEntity<Map<String, Object>> createChapter(@RequestBody Map<String, Object> req) {
+        Object subIdObj = req.get("subjectId");
+        if (subIdObj == null)
+            subIdObj = req.get("subject_id");
+        if (subIdObj == null || subIdObj.toString().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "subjectId is required"));
+        }
+        Long subjectId = Long.valueOf(subIdObj.toString().trim());
 
-        SubjectChapterEntity saved = curriculumService.createChapter(subjectId, className, chapterNumber, title, desc, order);
-        return ResponseEntity.ok(saved);
+        String className = (String) req.get("className");
+        if (className == null || className.trim().isEmpty()) {
+            className = (String) req.get("class_name");
+        }
+
+        String chapterNumber = (String) req.get("chapterNumber");
+        if (chapterNumber == null || chapterNumber.trim().isEmpty()) {
+            chapterNumber = (String) req.get("chapter_number");
+        }
+
+        String title = (String) req.get("chapterTitle");
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("title");
+        }
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("chapterName");
+        }
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("name");
+        }
+        if (title == null || title.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "chapterTitle is required"));
+        }
+
+        String desc = (String) req.get("description");
+        if (desc == null) {
+            desc = (String) req.get("desc");
+        }
+
+        Integer order = 1;
+        Object orderObj = req.get("displayOrder");
+        if (orderObj == null)
+            orderObj = req.get("display_order");
+        if (orderObj != null && !orderObj.toString().trim().isEmpty()) {
+            try {
+                order = Integer.valueOf(orderObj.toString().trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        SubjectChapterEntity saved = curriculumService.createChapter(subjectId, className, chapterNumber, title, desc,
+                order);
+        return ResponseEntity.ok(curriculumService.mapChapterToDto(saved));
     }
 
     // 4. Update chapter
     @PutMapping("/chapters/{id}")
     @Operation(summary = "Update chapter details")
-    public ResponseEntity<SubjectChapterEntity> updateChapter(@PathVariable Long id, @RequestBody Map<String, Object> req) {
+    public ResponseEntity<Map<String, Object>> updateChapter(@PathVariable Long id,
+            @RequestBody Map<String, Object> req) {
         String chapterNumber = (String) req.get("chapterNumber");
-        String title = (String) req.get("chapterTitle");
-        String desc = (String) req.get("description");
-        Integer order = req.get("displayOrder") != null ? Integer.valueOf(req.get("displayOrder").toString()) : 1;
+        if (chapterNumber == null || chapterNumber.trim().isEmpty()) {
+            chapterNumber = (String) req.get("chapter_number");
+        }
 
-        return ResponseEntity.ok(curriculumService.updateChapter(id, chapterNumber, title, desc, order));
+        String title = (String) req.get("chapterTitle");
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("title");
+        }
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("chapterName");
+        }
+        if (title == null || title.trim().isEmpty()) {
+            title = (String) req.get("name");
+        }
+
+        String desc = (String) req.get("description");
+        if (desc == null) {
+            desc = (String) req.get("desc");
+        }
+
+        Integer order = null;
+        Object orderObj = req.get("displayOrder");
+        if (orderObj == null)
+            orderObj = req.get("display_order");
+        if (orderObj != null && !orderObj.toString().trim().isEmpty()) {
+            try {
+                order = Integer.valueOf(orderObj.toString().trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        String className = (String) req.get("className");
+        if (className == null || className.trim().isEmpty()) {
+            className = (String) req.get("class_name");
+        }
+
+        Object subIdObj = req.get("subjectId");
+        if (subIdObj == null)
+            subIdObj = req.get("subject_id");
+        Long subjectId = (subIdObj != null && !subIdObj.toString().trim().isEmpty())
+                ? Long.valueOf(subIdObj.toString().trim())
+                : null;
+
+        SubjectChapterEntity updated = curriculumService.updateChapter(id, chapterNumber, title, desc, order, className,
+                subjectId);
+        return ResponseEntity.ok(curriculumService.mapChapterToDto(updated));
     }
 
     // 5. Delete chapter
@@ -121,7 +204,8 @@ public class TeacherCurriculumController {
         String title = (String) req.get("title");
         String desc = (String) req.get("description");
         String difficulty = req.get("difficulty") != null ? req.get("difficulty").toString() : "Medium";
-        Integer minutes = req.get("estimatedMinutes") != null ? Integer.valueOf(req.get("estimatedMinutes").toString()) : 30;
+        Integer minutes = req.get("estimatedMinutes") != null ? Integer.valueOf(req.get("estimatedMinutes").toString())
+                : 30;
         Integer order = req.get("displayOrder") != null ? Integer.valueOf(req.get("displayOrder").toString()) : 1;
 
         return ResponseEntity.ok(curriculumService.createTopic(chapterId, title, desc, difficulty, minutes, order));
@@ -134,7 +218,8 @@ public class TeacherCurriculumController {
         String title = (String) req.get("title");
         String desc = (String) req.get("description");
         String difficulty = (String) req.get("difficulty");
-        Integer minutes = req.get("estimatedMinutes") != null ? Integer.valueOf(req.get("estimatedMinutes").toString()) : null;
+        Integer minutes = req.get("estimatedMinutes") != null ? Integer.valueOf(req.get("estimatedMinutes").toString())
+                : null;
         Integer order = req.get("displayOrder") != null ? Integer.valueOf(req.get("displayOrder").toString()) : null;
         String status = (String) req.get("status");
 
@@ -149,7 +234,8 @@ public class TeacherCurriculumController {
         return ResponseEntity.ok(Map.of("success", true, "message", "Topic deleted"));
     }
 
-    // 9. Add note with optional file upload (Multipart) - Attached to Chapter or Topic
+    // 9. Add note with optional file upload (Multipart) - Attached to Chapter or
+    // Topic
     @PostMapping(value = "/notes", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload and attach note to a Chapter or Topic (with file)")
     public ResponseEntity<TopicNoteEntity> addNoteWithFile(
@@ -167,8 +253,8 @@ public class TeacherCurriculumController {
         Long teacherId = currentUser != null ? currentUser.getId() : null;
 
         TopicNoteEntity note = curriculumService.addNote(
-                chapterId, topicId, title, description, contentHtml, file, directUrl, isDownloadable, teacherId, teacherName
-        );
+                chapterId, topicId, title, description, contentHtml, file, directUrl, isDownloadable, teacherId,
+                teacherName);
         return ResponseEntity.ok(note);
     }
 
@@ -177,22 +263,25 @@ public class TeacherCurriculumController {
     @Operation(summary = "Add note to a Chapter or Topic without uploading binary file")
     public ResponseEntity<TopicNoteEntity> addNoteJson(@RequestBody Map<String, Object> req) {
         Long chapterId = req.get("chapterId") != null && !req.get("chapterId").toString().isBlank()
-                ? Long.valueOf(req.get("chapterId").toString()) : null;
+                ? Long.valueOf(req.get("chapterId").toString())
+                : null;
         Long topicId = req.get("topicId") != null && !req.get("topicId").toString().isBlank()
-                ? Long.valueOf(req.get("topicId").toString()) : null;
+                ? Long.valueOf(req.get("topicId").toString())
+                : null;
         String title = (String) req.get("title");
         String desc = (String) req.get("description");
         String contentHtml = (String) req.get("contentHtml");
         String directUrl = (String) req.get("fileUrl");
-        Boolean isDownloadable = req.get("isDownloadable") != null ? Boolean.valueOf(req.get("isDownloadable").toString()) : true;
+        Boolean isDownloadable = req.get("isDownloadable") != null
+                ? Boolean.valueOf(req.get("isDownloadable").toString())
+                : true;
 
         UserEntity currentUser = securityUtil.getCurrentUser().orElse(null);
         String teacherName = currentUser != null ? currentUser.getName() : "Teacher";
         Long teacherId = currentUser != null ? currentUser.getId() : null;
 
         TopicNoteEntity note = curriculumService.addNote(
-                chapterId, topicId, title, desc, contentHtml, null, directUrl, isDownloadable, teacherId, teacherName
-        );
+                chapterId, topicId, title, desc, contentHtml, null, directUrl, isDownloadable, teacherId, teacherName);
         return ResponseEntity.ok(note);
     }
 
