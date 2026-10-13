@@ -5,7 +5,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.*;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -44,6 +43,7 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/api/health").permitAll()
 
                         // Admin endpoints
                         .requestMatchers("/api/admin/**").hasAnyRole("MASTER_ADMIN", "ADMIN")
@@ -52,43 +52,57 @@ public class SecurityConfig {
                         .requestMatchers("/api/teachers/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
 
                         // Student management - admin and teachers can manage, students read-only
-                        .requestMatchers("/api/students/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/students/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
 
                         // Guardian / Parent management
-                        .requestMatchers("/api/guardians/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "PARENT")
+                        .requestMatchers("/api/guardians/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "PARENT")
 
                         // School operations modules
                         .requestMatchers("/api/classes/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
-                        .requestMatchers("/api/exams/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
-                        .requestMatchers("/api/fees/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "TEACHER", "PARENT")
-                        .requestMatchers("/api/attendance/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
-                        .requestMatchers("/api/leaves/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "STAFF")
-                        .requestMatchers("/api/certificates/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
-                        .requestMatchers("/api/library/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "LIBRARIAN", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/exams/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers("/api/fees/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "TEACHER", "PARENT")
+                        .requestMatchers("/api/attendance/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers("/api/leaves/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "STAFF")
+                        .requestMatchers("/api/certificates/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
+                        .requestMatchers("/api/library/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "LIBRARIAN", "TEACHER", "STUDENT")
                         .requestMatchers("/api/notices/**").permitAll()
-                        .requestMatchers("/api/accounts/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT")
+                        .requestMatchers("/api/accounts/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT")
                         .requestMatchers("/api/hrm/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
                         .requestMatchers("/api/staff/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
-                        .requestMatchers("/api/designations/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers("/api/designations/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
                         .requestMatchers("/api/holidays/**").permitAll()
-                        .requestMatchers("/api/timetable/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
-                        
+                        .requestMatchers("/api/timetable/**")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
+
                         // File storage & downloads
                         .requestMatchers("/api/files/**").permitAll()
 
-                        .requestMatchers("/api/teacher/homework/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
+                        .requestMatchers("/api/teacher/homework/**")
+                        .hasAnyRole("TEACHER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
 
                         // Teacher Curriculum & Notes Management
                         .requestMatchers("/api/teacher/curriculum/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "ADMIN")
 
                         .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/mobile/exams/**")
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
-                        .requestMatchers(org.springframework.http.HttpMethod.PATCH, "/api/mobile/leaves/**", "/api/mobile/expenses/**")
+                        .requestMatchers(org.springframework.http.HttpMethod.PATCH, "/api/mobile/leaves/**",
+                                "/api/mobile/expenses/**")
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
                         .requestMatchers("/api/mobile/expenses/**", "/api/mobile/payroll/**")
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "STAFF")
 
-                        // Mobile App Endpoints: notices and holidays can be viewed by all mobile clients
+                        // Mobile App Endpoints: notices and holidays can be viewed by all mobile
+                        // clients
                         .requestMatchers("/api/mobile/notices/**").permitAll()
                         .requestMatchers("/api/mobile/holidays/**").permitAll()
                         .requestMatchers("/api/mobile/**").authenticated()
@@ -147,5 +161,3 @@ public class SecurityConfig {
         return source;
     }
 }
-
-
