@@ -49,8 +49,7 @@ public class MobileAppController {
     private final GalleryAlbumRepository galleryAlbumRepository;
     private final com.school.management.service.CurriculumService curriculumService;
 
-    // Transient student submission tracking
-    private static final Map<String, String> submittedHomeworkMap = new ConcurrentHashMap<>();
+    private final HomeworkSubmissionRepository homeworkSubmissionRepository;
 
     // ==========================================
     // 0. COMPOSITE HOME DASHBOARD ENDPOINT
@@ -77,8 +76,22 @@ public class MobileAppController {
             if (student == null && isStudent) {
                 student = studentRepository.findByEmailIgnoreCase(currentUser.getEmail()).orElse(null);
             }
-            if (student == null) {
-                student = studentRepository.findAll().stream().findFirst().orElse(null);
+            if (student == null && (isStudent || isParentViewingChild)) {
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked");
+            }
+            if (isStudent && !currentUser.getEmail().equalsIgnoreCase(student.getEmail())) {
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Cannot view another student");
+            }
+            if (isParentViewingChild) {
+                String selectedAdmission = student.getAdmissionNo();
+                boolean linked = studentRepository.findByGuardianEmailIgnoreCase(currentUser.getEmail()).stream()
+                        .anyMatch(child -> selectedAdmission.equalsIgnoreCase(child.getAdmissionNo()));
+                GuardianEntity parent = guardianRepository.findByEmailIgnoreCase(currentUser.getEmail()).orElse(null);
+                if (parent != null && parent.getStudentAdmissionNo() != null) {
+                    linked = linked || Arrays.stream(parent.getStudentAdmissionNo().split(","))
+                            .anyMatch(admission -> selectedAdmission.equalsIgnoreCase(admission.trim()));
+                }
+                if (!linked) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Child is not linked to your account");
             }
 
             String studentName = student != null && student.getName() != null ? student.getName() : "Kauan Sousa";
@@ -243,16 +256,7 @@ public class MobileAppController {
             }
 
             List<Map<String, Object>> children = new ArrayList<>();
-            if (childrenEntities.isEmpty()) {
-                Map<String, Object> child1 = new HashMap<>();
-                child1.put("id", "1");
-                child1.put("name", "Kauan Sousa");
-                child1.put("className", "Class - 10 - A English");
-                child1.put("rollNo", "31");
-                child1.put("admissionNo", "ADM-1001");
-                child1.put("avatarUrl", "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
-                children.add(child1);
-            } else {
+            {
                 for (StudentEntity s : childrenEntities) {
                     Map<String, Object> c = new HashMap<>();
                     c.put("id", String.valueOf(s.getId()));
@@ -700,6 +704,13 @@ public class MobileAppController {
     public ResponseEntity<List<Map<String, Object>>> getHomework(
             @RequestParam(required = false) String className) {
 
+        UserEntity homeworkUser = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        StudentEntity ownStudent = null;
+        if (homeworkUser.getRole() == Role.STUDENT) {
+            ownStudent = studentRepository.findByEmailIgnoreCase(homeworkUser.getEmail()).orElseThrow(
+                    () -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
+            className = ownStudent.getClassName();
+        }
         List<HomeworkEntity> list;
         if (className != null && !className.isBlank()) {
             list = homeworkRepository.findByClassNameIgnoreCaseOrderByIdDesc(className);
@@ -709,15 +720,16 @@ public class MobileAppController {
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (HomeworkEntity h : list) {
-            String submissionStatus = submittedHomeworkMap.getOrDefault(String.valueOf(h.getId()), "pending");
-            if (h.getDueDate() != null && !h.getDueDate().isBlank()) {
+            if (ownStudent != null && h.getSection() != null && !h.getSection().isBlank() && !h.getSection().equalsIgnoreCase(ownStudent.getSection())) continue;
+            UserEntity viewer = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+            StudentEntity viewerStudent = studentRepository.findByEmailIgnoreCase(viewer.getEmail()).orElse(null);
+            String submissionStatus = viewerStudent != null && homeworkSubmissionRepository
+                    .findByHomeworkIdAndStudentId(h.getId(), viewerStudent.getId()).isPresent() ? "submitted" : "pending";
+            if ("pending".equals(submissionStatus) && h.getDueDate() != null) {
                 try {
-                    if (LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now()) && "pending".equalsIgnoreCase(submissionStatus)) {
-                        submissionStatus = "submitted";
-                    }
-                } catch (Exception ignored) {}
+                    if (LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now())) submissionStatus = "overdue";
+                } catch (java.time.format.DateTimeParseException ignored) { }
             }
-
             Map<String, Object> item = new HashMap<>();
             item.put("id", "hw_" + h.getId());
             item.put("dbId", h.getId());
@@ -739,7 +751,26 @@ public class MobileAppController {
     @Operation(summary = "Submit homework by student")
     public ResponseEntity<Map<String, Object>> submitHomework(@PathVariable String id) {
         String cleanId = id.replace("hw_", "");
-        submittedHomeworkMap.put(cleanId, "submitted");
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (user.getRole() != Role.STUDENT) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Only students can submit homework");
+        StudentEntity student = studentRepository.findByEmailIgnoreCase(user.getEmail())
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
+        Long homeworkId;
+        try { homeworkId = Long.valueOf(cleanId); }
+        catch (NumberFormatException e) { throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid homework ID"); }
+        HomeworkEntity homework = homeworkRepository.findById(homeworkId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Homework not found"));
+        if (!homework.getClassName().equalsIgnoreCase(student.getClassName()) ||
+                (homework.getSection() != null && !homework.getSection().isBlank() && !homework.getSection().equalsIgnoreCase(student.getSection())))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Homework is not assigned to your class");
+        HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(homeworkId, student.getId()).orElseGet(() -> {
+            HomeworkSubmissionEntity created = new HomeworkSubmissionEntity();
+            created.setHomeworkId(homeworkId);
+            created.setStudentId(student.getId());
+            created.setSubmittedAt(java.time.LocalDateTime.now());
+            return created;
+        });
+        homeworkSubmissionRepository.save(submission);
 
         Map<String, Object> res = new HashMap<>();
         res.put("id", id);
@@ -1420,3 +1451,6 @@ public class MobileAppController {
         return m;
     }
 }
+
+
+

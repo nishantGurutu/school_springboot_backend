@@ -66,6 +66,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, summary.isEmpty() ? "Validation failed" : summary, fieldErrors);
     }
 
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Object>> handleResponseStatus(org.springframework.web.server.ResponseStatusException ex) {
+        return build(HttpStatus.valueOf(ex.getStatusCode().value()), ex.getReason());
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException ex) {
         if (ex.getMessage() != null && ex.getMessage().contains("already")) {
@@ -79,3 +84,4 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage() != null ? ex.getMessage() : "An unexpected server error occurred");
     }
 }
+

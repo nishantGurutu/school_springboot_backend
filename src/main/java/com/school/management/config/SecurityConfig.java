@@ -76,8 +76,17 @@ public class SecurityConfig {
                         // File storage & downloads
                         .requestMatchers("/api/files/**").permitAll()
 
+                        .requestMatchers("/api/teacher/homework/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
+
                         // Teacher Curriculum & Notes Management
                         .requestMatchers("/api/teacher/curriculum/**").hasAnyRole("TEACHER", "MASTER_ADMIN", "ADMIN")
+
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/mobile/exams/**")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers(org.springframework.http.HttpMethod.PATCH, "/api/mobile/leaves/**", "/api/mobile/expenses/**")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
+                        .requestMatchers("/api/mobile/expenses/**", "/api/mobile/payroll/**")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "STAFF")
 
                         // Mobile App Endpoints: notices and holidays can be viewed by all mobile clients
                         .requestMatchers("/api/mobile/notices/**").permitAll()
@@ -130,7 +139,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(
                 List.of("http://localhost:3000", "http://127.0.0.1:3000"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -138,3 +147,5 @@ public class SecurityConfig {
         return source;
     }
 }
+
+

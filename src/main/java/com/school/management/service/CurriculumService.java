@@ -23,6 +23,34 @@ public class CurriculumService {
     private final TopicNoteRepository noteRepository;
     private final TeacherRepository teacherRepository;
     private final FileStorageService fileStorageService;
+    private final StudentRepository studentRepository;
+    private final com.school.management.util.SecurityUtil securityUtil;
+
+    private StudentEntity currentStudent() {
+        var user = securityUtil.getCurrentUser().orElseThrow(() -> new com.school.management.exceptions.UnauthorizedException("Not authenticated"));
+        if (user.getRole() != com.school.management.domain.user.Role.STUDENT) return null;
+        return studentRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow(() -> new ResourceNotFoundException("Student profile not linked"));
+    }
+
+    private boolean classMatches(String curriculumClass, String studentClass) {
+        return curriculumClass == null || curriculumClass.isBlank() || curriculumClass.equalsIgnoreCase("All")
+                || (studentClass != null && curriculumClass.trim().equalsIgnoreCase(studentClass.trim()));
+    }
+
+    private void checkSubject(StudentEntity student, SubjectEntity subject) {
+        if (student == null) return;
+        boolean assigned = student.getSubjectIds() != null && !student.getSubjectIds().isBlank()
+                ? Arrays.stream(student.getSubjectIds().split(",")).anyMatch(id -> id.trim().equals(subject.getId().toString()))
+                : classMatches(subject.getClassName(), student.getClassName());
+        if (!assigned) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Subject is not assigned to you");
+    }
+
+    private void checkChapter(StudentEntity student, SubjectChapterEntity chapter) {
+        if (student == null) return;
+        checkSubject(student, chapter.getSubject());
+        if (!classMatches(chapter.getClassName(), student.getClassName()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Chapter is not assigned to your class");
+    }
 
     // ==========================================
     // TEACHER CURRICULUM MANAGEMENT
@@ -322,18 +350,12 @@ public class CurriculumService {
 
         List<SubjectChapterEntity> chapters = chapterRepository.findBySubjectIdOrderByDisplayOrderAsc(subjectId);
         
-        // Filter by class if specific class chapters exist
-        if (studentClassName != null && !studentClassName.isBlank()) {
-            List<SubjectChapterEntity> filtered = chapters.stream()
-                    .filter(c -> c.getClassName() == null || c.getClassName().equalsIgnoreCase("All")
-                            || studentClassName.toLowerCase().contains(c.getClassName().toLowerCase())
-                            || c.getClassName().toLowerCase().contains(studentClassName.toLowerCase()))
-                    .toList();
-            if (!filtered.isEmpty()) {
-                chapters = filtered;
-            }
+        StudentEntity student = currentStudent();
+        checkSubject(student, subject);
+        String effectiveClass = student != null ? student.getClassName() : studentClassName;
+        if (effectiveClass != null && !effectiveClass.isBlank()) {
+            chapters = chapters.stream().filter(chapter -> classMatches(chapter.getClassName(), effectiveClass)).toList();
         }
-
         List<Map<String, Object>> chapterList = new ArrayList<>();
         int totalTopics = 0;
         int totalNotes = 0;
@@ -392,6 +414,7 @@ public class CurriculumService {
         SubjectChapterEntity chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + chapterId));
 
+        checkChapter(currentStudent(), chapter);
         List<TopicNoteEntity> notes = noteRepository.findByChapterIdOrderByCreatedAtDesc(chapterId);
 
         Map<String, Object> response = new HashMap<>();
@@ -415,6 +438,13 @@ public class CurriculumService {
         SubjectTopicEntity topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new ResourceNotFoundException("Topic not found: " + topicId));
 
+        StudentEntity student = currentStudent();
+        if (topic.getChapter() != null) checkChapter(student, topic.getChapter());
+        else {
+            checkSubject(student, topic.getSubject());
+            if (student != null && !classMatches(topic.getClassName(), student.getClassName()))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Topic is not assigned to your class");
+        }
         List<TopicNoteEntity> notes = noteRepository.findByTopicIdOrderByCreatedAtDesc(topicId);
 
         Map<String, Object> response = new HashMap<>();
@@ -448,3 +478,4 @@ public class CurriculumService {
         return m;
     }
 }
+
