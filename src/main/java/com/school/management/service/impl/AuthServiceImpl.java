@@ -29,6 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private final GuardianRepository guardianRepository;
     private final TeacherRepository teacherRepository;
     private final StaffRepository staffRepository;
+    private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -151,6 +152,26 @@ public class AuthServiceImpl implements AuthService {
             return createAndSaveUser(st.getEmail(), st.getName(), Role.STAFF, "password");
         }
 
+        // 6. Lookup in Driver entity (by email, phone, licenseNumber, or "driver" shorthand)
+        if ("driver".equalsIgnoreCase(cleanInput)) {
+            cleanInput = "driver@school.com";
+        }
+        Optional<com.school.management.entity.transport.DriverProfileEntity> driverOpt = driverRepository.findByEmailIgnoreCase(cleanInput);
+        if (driverOpt.isEmpty()) {
+            driverOpt = driverRepository.findByPhone(cleanInput);
+        }
+        if (driverOpt.isEmpty()) {
+            driverOpt = driverRepository.findByLicenseNumberIgnoreCase(cleanInput);
+        }
+        if (driverOpt.isPresent()) {
+            com.school.management.entity.transport.DriverProfileEntity d = driverOpt.get();
+            Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(d.getEmail());
+            if (existingUser.isPresent()) {
+                return existingUser.get();
+            }
+            return createAndSaveUser(d.getEmail(), d.getName(), Role.DRIVER, "password");
+        }
+
         throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -167,7 +188,16 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private void enrichAuthResponse(AuthResponse response, UserEntity user) {
-        if (user.getRole() == Role.STUDENT) {
+        if (user.getRole() == Role.DRIVER) {
+            driverRepository.findByEmailIgnoreCase(user.getEmail()).ifPresent(d -> {
+                setField(response, "className", "Driver");
+                setField(response, "department", "Transport");
+                setField(response, "details", "License: " + d.getLicenseNumber() + " • " + d.getVerificationStatus());
+                setField(response, "avatarUrl", d.getAvatarUrl());
+                setField(response, "entityId", d.getId());
+                setField(response, "phone", d.getPhone());
+            });
+        } else if (user.getRole() == Role.STUDENT) {
             studentRepository.findByEmail(user.getEmail()).ifPresent(s -> {
                 setField(response, "className", s.getClassName());
                 setField(response, "details", "Roll No: " + s.getRollNo() + " • " + s.getClassName());

@@ -1,6 +1,5 @@
 package com.school.management.config;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,12 +13,16 @@ import java.sql.Connection;
  * Fixes pre-existing database constraints and purges legacy code-seeded mock data.
  */
 @Configuration
-@RequiredArgsConstructor
 @Slf4j
 public class DatabaseSchemaFix {
 
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
+
+    public DatabaseSchemaFix(DataSource dataSource, JdbcTemplate jdbcTemplate) {
+        this.dataSource = dataSource;
+        this.jdbcTemplate = jdbcTemplate;
+    }
 
     @Bean
     public CommandLineRunner fixRoleCheckConstraint() {

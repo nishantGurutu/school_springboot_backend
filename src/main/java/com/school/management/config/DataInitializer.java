@@ -29,14 +29,16 @@ public class DataInitializer implements CommandLineRunner {
         } catch (Exception ignored) {
         }
 
-        // Purge any accidental teacher record with the admin email to prevent role conflicts
+        // Purge any accidental teacher record with the admin email to prevent role
+        // conflicts
         try {
             teacherRepository.findByEmailIgnoreCase("admin@school.com").ifPresent(teacherRepository::delete);
             jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
         } catch (Exception ignored) {
         }
 
-        // Ensure default Super Admin account exists and its role/userType is ADMIN (not TEACHER)
+        // Ensure default Super Admin account exists and its role/userType is ADMIN (not
+        // TEACHER)
         Optional<UserEntity> existingAdmin = userRepository.findByEmailIgnoreCase("admin@school.com");
         if (existingAdmin.isPresent()) {
             UserEntity admin = existingAdmin.get();

@@ -116,6 +116,9 @@ public class SecurityConfig {
                         // Master data - any authenticated user
                         .requestMatchers("/api/master-data").authenticated()
 
+                        // Transport Management module (Admin, Drivers, Parents, Students)
+                        .requestMatchers("/api/v1/transport/**").permitAll()
+
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((req, res, e) -> {

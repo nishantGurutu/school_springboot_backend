@@ -10,5 +10,6 @@ public enum Role {
     PARENT,
     STAFF,
     ACCOUNTANT,
-    LIBRARIAN
-}
+    LIBRARIAN,
+    DRIVER
+}

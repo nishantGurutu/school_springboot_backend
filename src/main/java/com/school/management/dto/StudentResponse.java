@@ -2,7 +2,6 @@ package com.school.management.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.school.management.domain.student.Gender;
-import com.school.management.domain.student.StudentStatus;
 import com.school.management.entity.StudentEntity;
 import lombok.Builder;
 import lombok.Getter;
@@ -18,18 +17,18 @@ public class StudentResponse {
     // --- Dashboard table columns ---
     private Long id;
     private String admissionNo;
-    private String name;                    // full name
+    private String name; // full name
     private String rollNo;
     private String className;
     private String section;
     private Gender gender;
-    private String dob;                     // dd/MM/yyyy
-    private String guardian;                // guardian name
+    private String dob; // dd/MM/yyyy
+    private String guardian; // guardian name
     private String phone;
     private String email;
-    private String attendance;              // e.g. "98.5%"
-    private String status;                  // e.g. "Active"
-    private String avatar;                  // photo url
+    private String attendance; // e.g. "98.5%"
+    private String status; // e.g. "Active"
+    private String avatar; // photo url
 
     // --- Full details ---
     private String category;
@@ -143,13 +142,16 @@ public class StudentResponse {
     }
 
     private static java.util.List<Long> parseSubjectIds(String raw) {
-        if (raw == null || raw.isBlank()) return java.util.Collections.emptyList();
+        if (raw == null || raw.isBlank())
+            return java.util.Collections.emptyList();
         java.util.List<Long> ids = new java.util.ArrayList<>();
         for (String p : raw.split(",")) {
             try {
                 String clean = p.trim();
-                if (!clean.isEmpty()) ids.add(Long.parseLong(clean));
-            } catch (NumberFormatException ignored) {}
+                if (!clean.isEmpty())
+                    ids.add(Long.parseLong(clean));
+            } catch (NumberFormatException ignored) {
+            }
         }
         return ids;
     }

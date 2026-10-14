@@ -79,18 +79,23 @@ public class AttendanceService {
         String name = requireNonBlank(request.getName(), "Name is required").trim();
 
         entity.setAttendanceType(type);
-        entity.setAdmissionNo(request.getAdmissionNo() == null ? entity.getAdmissionNo() : request.getAdmissionNo().trim());
+        entity.setAdmissionNo(
+                request.getAdmissionNo() == null ? entity.getAdmissionNo() : request.getAdmissionNo().trim());
         entity.setName(name);
         entity.setRollNo(request.getRollNo() == null ? entity.getRollNo() : request.getRollNo().trim());
         entity.setClassName(request.getClassName() == null ? entity.getClassName() : request.getClassName().trim());
         entity.setDepartment(request.getDepartment() == null ? entity.getDepartment() : request.getDepartment().trim());
-        entity.setDesignation(request.getDesignation() == null ? entity.getDesignation() : request.getDesignation().trim());
-        entity.setAttendanceDate(request.getAttendanceDate() == null ? entity.getAttendanceDate() : request.getAttendanceDate().trim());
+        entity.setDesignation(
+                request.getDesignation() == null ? entity.getDesignation() : request.getDesignation().trim());
+        entity.setAttendanceDate(
+                request.getAttendanceDate() == null ? entity.getAttendanceDate() : request.getAttendanceDate().trim());
         entity.setStatus(request.getStatus() == null ? entity.getStatus() : request.getStatus().trim());
         entity.setNote(request.getNote() == null ? entity.getNote() : request.getNote().trim());
         entity.setAvatar(request.getAvatar() == null ? entity.getAvatar() : request.getAvatar());
-        if (request.getCheckInTime() != null) entity.setCheckInTime(request.getCheckInTime().trim());
-        if (request.getCheckOutTime() != null) entity.setCheckOutTime(request.getCheckOutTime().trim());
+        if (request.getCheckInTime() != null)
+            entity.setCheckInTime(request.getCheckInTime().trim());
+        if (request.getCheckOutTime() != null)
+            entity.setCheckOutTime(request.getCheckOutTime().trim());
 
         return AttendanceResponse.fromEntity(attendanceRepository.save(entity));
     }
