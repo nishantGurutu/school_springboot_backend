@@ -41,6 +41,10 @@ public interface StudentRepository extends JpaRepository<StudentEntity, Long> {
 
     List<StudentEntity> findByClassNameAndStatus(String className, StudentStatus status);
 
+    List<StudentEntity> findByClassNameIgnoreCase(String className);
+
+    List<StudentEntity> findByClassNameIgnoreCaseAndSectionIgnoreCase(String className, String section);
+
     Page<StudentEntity> findByClassName(String className, Pageable pageable);
 
     Page<StudentEntity> findByStatus(StudentStatus status, Pageable pageable);

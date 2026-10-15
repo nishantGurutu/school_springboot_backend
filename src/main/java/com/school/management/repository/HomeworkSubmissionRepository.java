@@ -6,4 +6,6 @@ import java.util.Optional;
 
 public interface HomeworkSubmissionRepository extends JpaRepository<HomeworkSubmissionEntity, Long> {
     Optional<HomeworkSubmissionEntity> findByHomeworkIdAndStudentId(Long homeworkId, Long studentId);
+    java.util.List<HomeworkSubmissionEntity> findByHomeworkIdOrderByIdDesc(Long homeworkId);
+    java.util.List<HomeworkSubmissionEntity> findByStudentIdOrderByIdDesc(Long studentId);
 }

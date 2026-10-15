@@ -91,6 +91,29 @@ public class DatabaseSchemaFix {
                         "PRIMARY KEY (teacher_id, subject_id))");
             } catch (Exception ignored) {}
 
+            // Schema additions for teacher assignments and student submissions
+            try {
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS teacher_id BIGINT");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS subject_id BIGINT");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS target_student_id BIGINT");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS target_student_name VARCHAR(255)");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS target_student_admission_no VARCHAR(64)");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS points INT DEFAULT 100");
+                jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS file_attachment_url VARCHAR(500)");
+            } catch (Exception ignored) {}
+
+            try {
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_name VARCHAR(255)");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_roll_no VARCHAR(64)");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_admission_no VARCHAR(64)");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS submission_text TEXT");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS file_url VARCHAR(500)");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'SUBMITTED'");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS points INT");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT");
+                jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP");
+            } catch (Exception ignored) {}
+
             // Purge legacy static records that were seeded by backend code
             try {
                 jdbcTemplate.execute("DELETE FROM homeworks WHERE title IN ('Quadratic Equations', 'Solar System Project', 'Persuasive Essay Writing', 'French Revolution Timeline')");

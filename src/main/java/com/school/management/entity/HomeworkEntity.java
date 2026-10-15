@@ -45,6 +45,25 @@ public class HomeworkEntity {
 
     private String assignedBy;
 
+    private Long teacherId;
+
+    private Long subjectId;
+
+    @Column(name = "target_student_id")
+    private Long targetStudentId;
+
+    @Column(name = "target_student_name")
+    private String targetStudentName;
+
+    @Column(name = "target_student_admission_no")
+    private String targetStudentAdmissionNo;
+
+    @Builder.Default
+    private Integer points = 100;
+
+    @Column(name = "file_attachment_url")
+    private String fileAttachmentUrl;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

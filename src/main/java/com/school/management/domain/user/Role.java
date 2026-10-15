@@ -11,5 +11,5 @@ public enum Role {
     STAFF,
     ACCOUNTANT,
     LIBRARIAN,
-    DRIVER
-}
+    DRIVER 
+}

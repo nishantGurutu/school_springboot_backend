@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -50,6 +51,10 @@ public class MobileAppController {
     private final com.school.management.service.CurriculumService curriculumService;
 
     private final HomeworkSubmissionRepository homeworkSubmissionRepository;
+    private final SubjectChapterRepository subjectChapterRepository;
+    private final SubjectTopicRepository subjectTopicRepository;
+    private final SchoolClassRepository schoolClassRepository;
+    private final SectionRepository sectionRepository;
 
     // ==========================================
     // 0. COMPOSITE HOME DASHBOARD ENDPOINT
@@ -776,6 +781,625 @@ public class MobileAppController {
         res.put("id", id);
         res.put("status", "submitted");
         res.put("message", "Homework submitted successfully");
+        return ResponseEntity.ok(res);
+    }
+
+    // ==========================================
+    // 4A. TEACHER CLASSES & STUDENTS ENDPOINTS
+    // ==========================================
+    @GetMapping("/teacher/classes")
+    @Operation(summary = "Get teacher assigned classes with student counts")
+    public ResponseEntity<List<Map<String, Object>>> getTeacherClasses() {
+        UserEntity user = securityUtil.getCurrentUser().orElse(null);
+        List<Map<String, Object>> classesList = new ArrayList<>();
+
+        TeacherEntity teacher = null;
+        if (user != null && user.getRole() == Role.TEACHER) {
+            teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
+        }
+
+        Set<String> classNames = new LinkedHashSet<>();
+        if (teacher != null && teacher.getAssignedClasses() != null && !teacher.getAssignedClasses().isEmpty()) {
+            for (SchoolClassEntity sc : teacher.getAssignedClasses()) {
+                classNames.add(sc.getName() + (sc.getSection() != null ? " - " + sc.getSection() : ""));
+            }
+        } else if (teacher != null && teacher.getAssignedClass() != null && !teacher.getAssignedClass().isBlank()) {
+            String[] parts = teacher.getAssignedClass().split(",");
+            for (String p : parts) {
+                if (!p.trim().isEmpty()) classNames.add(p.trim());
+            }
+        }
+
+        if (classNames.isEmpty()) {
+            List<SchoolClassEntity> scList = schoolClassRepository.findAll();
+            for (SchoolClassEntity sc : scList) {
+                classNames.add(sc.getName() + (sc.getSection() != null ? " - " + sc.getSection() : ""));
+            }
+        }
+
+        if (classNames.isEmpty()) {
+            List<StudentEntity> students = studentRepository.findAll();
+            for (StudentEntity s : students) {
+                if (s.getClassName() != null && !s.getClassName().isBlank()) {
+                    classNames.add(s.getClassName() + (s.getSection() != null && !s.getSection().isBlank() ? " - " + s.getSection() : ""));
+                }
+            }
+        }
+
+        long idx = 1;
+        String teacherSubject = teacher != null && teacher.getSubject() != null ? teacher.getSubject() : "All Subjects";
+        for (String cName : classNames) {
+            String tempBaseClass = cName;
+            String tempSection = "A";
+            if (cName.contains("-")) {
+                String[] parts = cName.split("-");
+                tempBaseClass = parts[0].trim();
+                if (parts.length > 1) tempSection = parts[1].trim();
+            }
+            final String baseClass = tempBaseClass;
+            final String section = tempSection;
+
+            long totalStudents = studentRepository.findByClassNameIgnoreCase(baseClass).stream()
+                    .filter(s -> section.isBlank() || section.equalsIgnoreCase(s.getSection()))
+                    .count();
+            if (totalStudents == 0) {
+                totalStudents = studentRepository.countByClassName(baseClass);
+            }
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", "cls_" + idx++);
+            map.put("className", baseClass);
+            map.put("section", section);
+            map.put("subject", teacherSubject);
+            map.put("totalStudents", totalStudents);
+            map.put("room", "Room " + (100 + idx));
+            map.put("isClassTeacher", idx == 2);
+            map.put("timing", "09:00 AM - 10:00 AM");
+            map.put("syllabusProgress", 0.70);
+            classesList.add(map);
+        }
+
+        return ResponseEntity.ok(classesList);
+    }
+
+    @GetMapping("/classes/{className}/students")
+    @Operation(summary = "Get enrolled students list in a class with ID and details")
+    public ResponseEntity<List<Map<String, Object>>> getClassStudents(
+            @PathVariable String className,
+            @RequestParam(required = false) String section) {
+
+        List<StudentEntity> list;
+        if (section != null && !section.isBlank()) {
+            list = studentRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase(className.trim(), section.trim());
+        } else {
+            list = studentRepository.findByClassNameIgnoreCase(className.trim());
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (StudentEntity s : list) {
+            Map<String, Object> sm = new HashMap<>();
+            sm.put("id", s.getId());
+            sm.put("admissionNo", s.getAdmissionNo());
+            sm.put("rollNo", s.getRollNo());
+            sm.put("name", s.getName() != null ? s.getName() : (s.getFirstName() + " " + s.getLastName()).trim());
+            sm.put("className", s.getClassName());
+            sm.put("section", s.getSection());
+            sm.put("gender", s.getGender() != null ? s.getGender().name() : "MALE");
+            sm.put("phone", s.getPhone());
+            sm.put("email", s.getEmail());
+            sm.put("studentPhoto", s.getStudentPhoto());
+            result.add(sm);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    // ==========================================
+    // 4B. TEACHER LESSONS & TOPICS ENDPOINTS
+    // ==========================================
+    @GetMapping("/teacher/lessons")
+    @Operation(summary = "Get lessons/chapters for teacher per class and subject")
+    public ResponseEntity<List<Map<String, Object>>> getTeacherLessons(
+            @RequestParam(required = false) String className,
+            @RequestParam(required = false) Long subjectId) {
+
+        List<SubjectChapterEntity> chapters;
+        if (subjectId != null) {
+            if (className != null && !className.isBlank()) {
+                chapters = subjectChapterRepository.findBySubjectIdAndClassNameFlexible(subjectId, className.trim());
+            } else {
+                chapters = subjectChapterRepository.findBySubjectIdOrderByDisplayOrderAsc(subjectId);
+            }
+        } else if (className != null && !className.isBlank()) {
+            chapters = subjectChapterRepository.findByClassNameFlexible(className.trim());
+        } else {
+            chapters = subjectChapterRepository.findAll();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (SubjectChapterEntity ch : chapters) {
+            List<SubjectTopicEntity> topics = subjectTopicRepository.findByChapterIdOrderByDisplayOrderAsc(ch.getId());
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", ch.getId());
+            map.put("chapterNumber", ch.getChapterNumber());
+            map.put("chapterTitle", ch.getChapterTitle());
+            map.put("title", ch.getChapterNumber() + ": " + ch.getChapterTitle());
+            map.put("description", ch.getDescription());
+            map.put("className", ch.getClassName());
+            map.put("subjectId", ch.getSubject() != null ? ch.getSubject().getId() : null);
+            map.put("subjectName", ch.getSubject() != null ? ch.getSubject().getName() : "General");
+            map.put("topicsCount", topics.size());
+
+            List<Map<String, Object>> topicMaps = new ArrayList<>();
+            for (SubjectTopicEntity t : topics) {
+                Map<String, Object> tm = new HashMap<>();
+                tm.put("id", t.getId());
+                tm.put("title", t.getTitle());
+                tm.put("description", t.getDescription());
+                tm.put("difficulty", t.getDifficulty());
+                tm.put("estimatedMinutes", t.getEstimatedMinutes());
+                tm.put("status", t.getStatus());
+                topicMaps.add(tm);
+            }
+            map.put("topics", topicMaps);
+            result.add(map);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/teacher/lessons")
+    @Operation(summary = "Create a new lesson/chapter")
+    public ResponseEntity<Map<String, Object>> createTeacherLesson(@RequestBody Map<String, Object> req) {
+        String className = String.valueOf(req.getOrDefault("className", "Class 10"));
+        String chapterNumber = String.valueOf(req.getOrDefault("chapterNumber", "Chapter 1"));
+        String chapterTitle = String.valueOf(req.getOrDefault("chapterTitle", "New Lesson"));
+        String description = String.valueOf(req.getOrDefault("description", ""));
+        Long subjectId = req.containsKey("subjectId") && req.get("subjectId") != null
+                ? Long.valueOf(req.get("subjectId").toString()) : null;
+
+        SubjectEntity subject = null;
+        if (subjectId != null) {
+            subject = subjectRepository.findById(subjectId).orElse(null);
+        }
+        if (subject == null) {
+            subject = subjectRepository.findAll().stream().findFirst().orElseGet(() ->
+                    subjectRepository.save(SubjectEntity.builder().name("General").code("GEN").status("Active").build())
+            );
+        }
+
+        SubjectChapterEntity chapter = SubjectChapterEntity.builder()
+                .subject(subject)
+                .className(className)
+                .chapterNumber(chapterNumber)
+                .chapterTitle(chapterTitle)
+                .description(description)
+                .displayOrder(1)
+                .build();
+        chapter = subjectChapterRepository.save(chapter);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", chapter.getId());
+        res.put("chapterNumber", chapter.getChapterNumber());
+        res.put("chapterTitle", chapter.getChapterTitle());
+        res.put("className", chapter.getClassName());
+        res.put("description", chapter.getDescription());
+        res.put("topicsCount", 0);
+        return ResponseEntity.ok(res);
+    }
+
+    @PostMapping("/teacher/lessons/{lessonId}/topics")
+    @Operation(summary = "Add a topic to a lesson")
+    public ResponseEntity<Map<String, Object>> addTopicToLesson(
+            @PathVariable Long lessonId,
+            @RequestBody Map<String, Object> req) {
+
+        SubjectChapterEntity chapter = subjectChapterRepository.findById(lessonId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Lesson not found"));
+
+        String title = String.valueOf(req.getOrDefault("title", "New Topic"));
+        String desc = String.valueOf(req.getOrDefault("description", ""));
+        String difficulty = String.valueOf(req.getOrDefault("difficulty", "Medium"));
+        int estMinutes = Integer.parseInt(String.valueOf(req.getOrDefault("estimatedMinutes", 30)));
+
+        SubjectTopicEntity topic = SubjectTopicEntity.builder()
+                .chapter(chapter)
+                .subject(chapter.getSubject())
+                .className(chapter.getClassName())
+                .title(title)
+                .description(desc)
+                .difficulty(difficulty)
+                .estimatedMinutes(estMinutes)
+                .status("Active")
+                .build();
+        topic = subjectTopicRepository.save(topic);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", topic.getId());
+        res.put("title", topic.getTitle());
+        res.put("description", topic.getDescription());
+        res.put("difficulty", topic.getDifficulty());
+        res.put("estimatedMinutes", topic.getEstimatedMinutes());
+        return ResponseEntity.ok(res);
+    }
+
+    @DeleteMapping("/teacher/lessons/{lessonId}")
+    @Operation(summary = "Delete a lesson/chapter")
+    public ResponseEntity<Map<String, Object>> deleteTeacherLesson(@PathVariable Long lessonId) {
+        List<SubjectTopicEntity> topics = subjectTopicRepository.findByChapterIdOrderByDisplayOrderAsc(lessonId);
+        subjectTopicRepository.deleteAll(topics);
+        subjectChapterRepository.deleteById(lessonId);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("success", true);
+        res.put("message", "Lesson deleted successfully");
+        return ResponseEntity.ok(res);
+    }
+
+    // ==========================================
+    // 4C. TEACHER ASSIGNMENTS (ID-WISE ASSIGNMENT & GRADING)
+    // ==========================================
+    @GetMapping("/teacher/assignments")
+    @Operation(summary = "Get assignments created by teacher with submission stats")
+    public ResponseEntity<List<Map<String, Object>>> getTeacherAssignments(
+            @RequestParam(required = false) String className,
+            @RequestParam(required = false) String subject) {
+
+        UserEntity user = securityUtil.getCurrentUser().orElse(null);
+        TeacherEntity teacher = null;
+        if (user != null && user.getRole() == Role.TEACHER) {
+            teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
+        }
+
+        List<HomeworkEntity> list = homeworkRepository.findAllByOrderByIdDesc();
+        if (className != null && !className.isBlank()) {
+            list = list.stream().filter(h -> className.equalsIgnoreCase(h.getClassName())).toList();
+        }
+        if (subject != null && !subject.isBlank()) {
+            list = list.stream().filter(h -> subject.equalsIgnoreCase(h.getSubject())).toList();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (HomeworkEntity h : list) {
+            List<HomeworkSubmissionEntity> submissions = homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(h.getId());
+            long evaluatedCount = submissions.stream().filter(s -> s.getPoints() != null || "GRADED".equalsIgnoreCase(s.getStatus()) || "ACCEPTED".equalsIgnoreCase(s.getStatus())).count();
+
+            long totalStudents = 35;
+            if (h.getTargetStudentId() != null) {
+                totalStudents = 1;
+            } else if (h.getClassName() != null) {
+                long count = studentRepository.countByClassName(h.getClassName());
+                if (count > 0) totalStudents = count;
+            }
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", "hw_" + h.getId());
+            map.put("dbId", h.getId());
+            map.put("title", h.getTitle());
+            map.put("description", h.getDescription());
+            map.put("subject", h.getSubject());
+            map.put("className", h.getClassName());
+            map.put("section", h.getSection());
+            map.put("dueDate", h.getDueDate());
+            map.put("assignedDate", h.getAssignedDate());
+            map.put("assignedBy", h.getAssignedBy());
+            map.put("points", h.getPoints() != null ? h.getPoints() : 100);
+            map.put("targetStudentId", h.getTargetStudentId());
+            map.put("targetStudentName", h.getTargetStudentName());
+            map.put("targetStudentAdmissionNo", h.getTargetStudentAdmissionNo());
+            map.put("isTargetedToStudent", h.getTargetStudentId() != null);
+            map.put("fileAttachmentUrl", h.getFileAttachmentUrl());
+            map.put("submissionCount", submissions.size());
+            map.put("evaluatedCount", evaluatedCount);
+            map.put("totalStudents", totalStudents);
+            map.put("status", h.getStatus());
+            result.add(map);
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/teacher/assignments")
+    @Operation(summary = "Create an assignment and assign class-wide or to a specific Student ID")
+    public ResponseEntity<Map<String, Object>> createTeacherAssignment(@RequestBody Map<String, Object> req) {
+        UserEntity user = securityUtil.getCurrentUser().orElse(null);
+        TeacherEntity teacher = null;
+        if (user != null && user.getRole() == Role.TEACHER) {
+            teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
+        }
+
+        String title = String.valueOf(req.getOrDefault("title", "Assignment"));
+        String description = String.valueOf(req.getOrDefault("description", ""));
+        String subject = String.valueOf(req.getOrDefault("subject", teacher != null && teacher.getSubject() != null ? teacher.getSubject() : "General"));
+        String className = String.valueOf(req.getOrDefault("className", "Class 10"));
+        String section = String.valueOf(req.getOrDefault("section", "A"));
+        String dueDate = String.valueOf(req.getOrDefault("dueDate", LocalDate.now().plusDays(3).toString()));
+        int points = Integer.parseInt(String.valueOf(req.getOrDefault("points", 100)));
+        String fileAttachmentUrl = req.containsKey("fileAttachmentUrl") && req.get("fileAttachmentUrl") != null
+                ? req.get("fileAttachmentUrl").toString() : null;
+
+        Long targetStudentId = null;
+        String targetStudentName = null;
+        String targetStudentAdmissionNo = null;
+
+        if (req.containsKey("targetStudentId") && req.get("targetStudentId") != null && !req.get("targetStudentId").toString().isBlank()) {
+            try {
+                targetStudentId = Long.valueOf(req.get("targetStudentId").toString());
+                StudentEntity targetStudent = studentRepository.findById(targetStudentId).orElse(null);
+                if (targetStudent != null) {
+                    targetStudentName = targetStudent.getName();
+                    targetStudentAdmissionNo = targetStudent.getAdmissionNo();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        HomeworkEntity homework = HomeworkEntity.builder()
+                .title(title)
+                .description(description)
+                .subject(subject)
+                .className(className)
+                .section(section)
+                .assignedDate(LocalDate.now().toString())
+                .dueDate(dueDate)
+                .status("ACTIVE")
+                .assignedBy(teacher != null ? (teacher.getFirstName() + " " + teacher.getLastName()).trim() : (user != null ? user.getName() : "Teacher"))
+                .teacherId(teacher != null ? teacher.getId() : null)
+                .points(points)
+                .targetStudentId(targetStudentId)
+                .targetStudentName(targetStudentName)
+                .targetStudentAdmissionNo(targetStudentAdmissionNo)
+                .fileAttachmentUrl(fileAttachmentUrl)
+                .build();
+        homework = homeworkRepository.save(homework);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", "hw_" + homework.getId());
+        res.put("dbId", homework.getId());
+        res.put("title", homework.getTitle());
+        res.put("description", homework.getDescription());
+        res.put("subject", homework.getSubject());
+        res.put("className", homework.getClassName());
+        res.put("section", homework.getSection());
+        res.put("dueDate", homework.getDueDate());
+        res.put("points", homework.getPoints());
+        res.put("targetStudentId", homework.getTargetStudentId());
+        res.put("targetStudentName", homework.getTargetStudentName());
+        res.put("message", "Assignment created and assigned successfully");
+        return ResponseEntity.ok(res);
+    }
+
+    @GetMapping("/teacher/assignments/{id}/submissions")
+    @Operation(summary = "Get all student submissions for an assignment")
+    public ResponseEntity<List<Map<String, Object>>> getAssignmentSubmissions(@PathVariable String id) {
+        String cleanId = id.replace("hw_", "");
+        Long homeworkId = Long.valueOf(cleanId);
+
+        HomeworkEntity hw = homeworkRepository.findById(homeworkId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Assignment not found"));
+
+        List<HomeworkSubmissionEntity> submissions = homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(homeworkId);
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<Long> submittedStudentIds = new HashSet<>();
+
+        for (HomeworkSubmissionEntity s : submissions) {
+            submittedStudentIds.add(s.getStudentId());
+            Map<String, Object> map = new HashMap<>();
+            map.put("submissionId", s.getId());
+            map.put("homeworkId", homeworkId);
+            map.put("studentId", s.getStudentId());
+            map.put("studentName", s.getStudentName() != null ? s.getStudentName() : "Student #" + s.getStudentId());
+            map.put("studentRollNo", s.getStudentRollNo() != null ? s.getStudentRollNo() : "");
+            map.put("studentAdmissionNo", s.getStudentAdmissionNo() != null ? s.getStudentAdmissionNo() : "");
+            map.put("submittedAt", s.getSubmittedAt() != null ? s.getSubmittedAt().toString() : "");
+            map.put("submissionText", s.getSubmissionText() != null ? s.getSubmissionText() : "");
+            map.put("fileUrl", s.getFileUrl());
+            map.put("status", s.getStatus() != null ? s.getStatus() : "SUBMITTED");
+            map.put("points", s.getPoints());
+            map.put("maxPoints", hw.getPoints() != null ? hw.getPoints() : 100);
+            map.put("teacherFeedback", s.getTeacherFeedback());
+            map.put("reviewedAt", s.getReviewedAt() != null ? s.getReviewedAt().toString() : null);
+            result.add(map);
+        }
+
+        List<StudentEntity> eligibleStudents = new ArrayList<>();
+        if (hw.getTargetStudentId() != null) {
+            studentRepository.findById(hw.getTargetStudentId()).ifPresent(eligibleStudents::add);
+        } else if (hw.getClassName() != null) {
+            eligibleStudents = studentRepository.findByClassNameIgnoreCase(hw.getClassName());
+        }
+
+        for (StudentEntity st : eligibleStudents) {
+            if (!submittedStudentIds.contains(st.getId())) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("submissionId", null);
+                map.put("homeworkId", homeworkId);
+                map.put("studentId", st.getId());
+                map.put("studentName", st.getName() != null ? st.getName() : (st.getFirstName() + " " + st.getLastName()).trim());
+                map.put("studentRollNo", st.getRollNo());
+                map.put("studentAdmissionNo", st.getAdmissionNo());
+                map.put("submittedAt", null);
+                map.put("submissionText", null);
+                map.put("fileUrl", null);
+                map.put("status", "PENDING");
+                map.put("points", null);
+                map.put("maxPoints", hw.getPoints() != null ? hw.getPoints() : 100);
+                map.put("teacherFeedback", null);
+                map.put("reviewedAt", null);
+                result.add(map);
+            }
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/teacher/assignments/{id}/submissions/{submissionId}/review")
+    @Operation(summary = "Teacher reviews and grades a student submission")
+    public ResponseEntity<Map<String, Object>> reviewSubmission(
+            @PathVariable String id,
+            @PathVariable Long submissionId,
+            @RequestBody Map<String, Object> req) {
+
+        HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findById(submissionId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Submission not found"));
+
+        String status = String.valueOf(req.getOrDefault("status", "ACCEPTED")).toUpperCase();
+        Integer points = req.containsKey("points") && req.get("points") != null
+                ? Integer.valueOf(req.get("points").toString()) : null;
+        String feedback = req.containsKey("feedback") && req.get("feedback") != null
+                ? req.get("feedback").toString() : null;
+
+        submission.setStatus(status);
+        if (points != null) {
+            submission.setPoints(points);
+        }
+        if (feedback != null) {
+            submission.setTeacherFeedback(feedback);
+        }
+        submission.setReviewedAt(LocalDateTime.now());
+        submission = homeworkSubmissionRepository.save(submission);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("submissionId", submission.getId());
+        res.put("status", submission.getStatus());
+        res.put("points", submission.getPoints());
+        res.put("feedback", submission.getTeacherFeedback());
+        res.put("reviewedAt", submission.getReviewedAt().toString());
+        res.put("message", "Submission evaluated successfully");
+        return ResponseEntity.ok(res);
+    }
+
+    // ==========================================
+    // 4D. STUDENT & PARENT ASSIGNMENTS (WITH ID-WISE FILTER & SUBMISSION)
+    // ==========================================
+    @GetMapping("/student/assignments")
+    @Operation(summary = "Get assignments for student (class-wide + personalized by student ID)")
+    public ResponseEntity<List<Map<String, Object>>> getStudentAssignments(
+            @RequestParam(required = false) String admissionNo) {
+
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        StudentEntity student = null;
+
+        if (admissionNo != null && !admissionNo.isBlank()) {
+            student = studentRepository.findByAdmissionNoIgnoreCase(admissionNo.trim()).orElse(null);
+        }
+        if (student == null && user.getRole() == Role.STUDENT) {
+            student = studentRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
+        }
+        if (student == null) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked");
+        }
+
+        List<HomeworkEntity> allHw = homeworkRepository.findAllByOrderByIdDesc();
+        final StudentEntity currentStudent = student;
+
+        List<HomeworkEntity> eligible = allHw.stream().filter(h -> {
+            boolean classMatch = (h.getClassName() != null && h.getClassName().equalsIgnoreCase(currentStudent.getClassName()));
+            boolean sectionMatch = (h.getSection() == null || h.getSection().isBlank() || h.getSection().equalsIgnoreCase(currentStudent.getSection()));
+            boolean isAssignedToThisStudent = (h.getTargetStudentId() != null && h.getTargetStudentId().equals(currentStudent.getId()));
+            boolean isClassWide = (h.getTargetStudentId() == null);
+
+            return isAssignedToThisStudent || (classMatch && sectionMatch && isClassWide);
+        }).toList();
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (HomeworkEntity h : eligible) {
+            Optional<HomeworkSubmissionEntity> subOpt = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(h.getId(), currentStudent.getId());
+
+            String submissionStatus = "pending";
+            Integer scoredPoints = null;
+            String teacherFeedback = null;
+            String submittedAt = null;
+            String submissionText = null;
+            String submissionFileUrl = null;
+
+            if (subOpt.isPresent()) {
+                HomeworkSubmissionEntity sub = subOpt.get();
+                submissionStatus = sub.getStatus() != null ? sub.getStatus().toLowerCase() : "submitted";
+                scoredPoints = sub.getPoints();
+                teacherFeedback = sub.getTeacherFeedback();
+                submittedAt = sub.getSubmittedAt() != null ? sub.getSubmittedAt().toString() : null;
+                submissionText = sub.getSubmissionText();
+                submissionFileUrl = sub.getFileUrl();
+            } else if (h.getDueDate() != null) {
+                try {
+                    if (LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now())) {
+                        submissionStatus = "overdue";
+                    }
+                } catch (Exception ignored) {}
+            }
+
+            boolean isPersonalized = (h.getTargetStudentId() != null && h.getTargetStudentId().equals(currentStudent.getId()));
+
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", "hw_" + h.getId());
+            item.put("dbId", h.getId());
+            item.put("title", h.getTitle());
+            item.put("description", h.getDescription());
+            item.put("subject", h.getSubject());
+            item.put("className", h.getClassName());
+            item.put("section", h.getSection());
+            item.put("dueDate", h.getDueDate());
+            item.put("assignedDate", h.getAssignedDate());
+            item.put("assignedBy", h.getAssignedBy());
+            item.put("points", h.getPoints() != null ? h.getPoints() : 100);
+            item.put("maxPoints", h.getPoints() != null ? h.getPoints() : 100);
+            item.put("fileAttachmentUrl", h.getFileAttachmentUrl());
+            item.put("isPersonalized", isPersonalized);
+            item.put("targetStudentId", h.getTargetStudentId());
+            item.put("targetStudentName", h.getTargetStudentName());
+            item.put("status", submissionStatus);
+            item.put("submissionStatus", submissionStatus);
+            item.put("scoredPoints", scoredPoints);
+            item.put("teacherFeedback", teacherFeedback);
+            item.put("submittedAt", submittedAt);
+            item.put("submissionText", submissionText);
+            item.put("submissionFileUrl", submissionFileUrl);
+            result.add(item);
+        }
+
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/student/assignments/{id}/submit")
+    @Operation(summary = "Submit assignment work with text and attachment link")
+    public ResponseEntity<Map<String, Object>> submitStudentAssignment(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> req) {
+
+        String cleanId = id.replace("hw_", "");
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (user.getRole() != Role.STUDENT) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Only students can submit assignments");
+        }
+
+        StudentEntity student = studentRepository.findByEmailIgnoreCase(user.getEmail())
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
+
+        Long homeworkId = Long.valueOf(cleanId);
+        HomeworkEntity homework = homeworkRepository.findById(homeworkId)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Assignment not found"));
+
+        String text = String.valueOf(req.getOrDefault("submissionText", ""));
+        String fileUrl = req.containsKey("fileUrl") && req.get("fileUrl") != null ? req.get("fileUrl").toString() : null;
+
+        HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(homeworkId, student.getId())
+                .orElseGet(() -> HomeworkSubmissionEntity.builder()
+                        .homeworkId(homeworkId)
+                        .studentId(student.getId())
+                        .build());
+
+        submission.setStudentName(student.getName());
+        submission.setStudentRollNo(student.getRollNo());
+        submission.setStudentAdmissionNo(student.getAdmissionNo());
+        submission.setSubmittedAt(LocalDateTime.now());
+        submission.setSubmissionText(text);
+        submission.setFileUrl(fileUrl);
+        submission.setStatus("SUBMITTED");
+        submission = homeworkSubmissionRepository.save(submission);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", id);
+        res.put("status", "submitted");
+        res.put("submittedAt", submission.getSubmittedAt().toString());
+        res.put("message", "Assignment submitted successfully!");
         return ResponseEntity.ok(res);
     }
 

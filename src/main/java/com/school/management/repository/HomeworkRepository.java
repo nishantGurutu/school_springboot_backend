@@ -14,4 +14,8 @@ public interface HomeworkRepository extends JpaRepository<HomeworkEntity, Long> 
     List<HomeworkEntity> findByClassNameIgnoreCaseAndSectionIgnoreCaseOrderByIdDesc(String className, String section);
 
     List<HomeworkEntity> findAllByOrderByIdDesc();
+
+    List<HomeworkEntity> findByTeacherIdOrderByIdDesc(Long teacherId);
+
+    List<HomeworkEntity> findByTargetStudentIdOrderByIdDesc(Long targetStudentId);
 }
