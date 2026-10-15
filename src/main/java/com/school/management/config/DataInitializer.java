@@ -28,6 +28,17 @@ public class DataInitializer implements CommandLineRunner {
             jdbcTemplate.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS designation_id BIGINT");
             jdbcTemplate.execute("ALTER TABLE school_designations ADD COLUMN IF NOT EXISTS department_id BIGINT");
             jdbcTemplate.execute("ALTER TABLE school_designations DROP CONSTRAINT IF EXISTS uk_desig_name");
+
+            // Transport Schema Migrations
+            jdbcTemplate.execute("ALTER TABLE buses ADD COLUMN IF NOT EXISTS permit_expiry_date DATE");
+            jdbcTemplate.execute("ALTER TABLE transport_routes ADD COLUMN IF NOT EXISTS area_locality VARCHAR(128)");
+            jdbcTemplate.execute("ALTER TABLE transport_routes ADD COLUMN IF NOT EXISTS fare DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE driver_profiles ADD COLUMN IF NOT EXISTS joining_date DATE");
+            jdbcTemplate.execute("ALTER TABLE student_transport_assignments ADD COLUMN IF NOT EXISTS trip_type VARCHAR(32)");
+            jdbcTemplate.execute("ALTER TABLE student_transport_assignments ADD COLUMN IF NOT EXISTS start_date DATE");
+            jdbcTemplate.execute("ALTER TABLE student_transport_assignments ADD COLUMN IF NOT EXISTS end_date DATE");
+            jdbcTemplate.execute("ALTER TABLE student_transport_assignments ADD COLUMN IF NOT EXISTS monthly_fee DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE student_transport_assignments ADD COLUMN IF NOT EXISTS fee_status VARCHAR(32)");
         } catch (Exception ignored) {
         }
 

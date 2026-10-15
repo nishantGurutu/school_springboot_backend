@@ -15,9 +15,11 @@ public class RouteDto {
     private String schoolId;
     private String routeName;
     private String routeCode;
+    private String areaLocality;
     private String description;
     private String startLocation;
     private String endLocation;
+    private Double fare;
     private Integer plannedDurationMinutes;
     private Double totalDistanceKm;
     private String morningStartTime;

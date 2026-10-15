@@ -214,6 +214,14 @@ public class TransportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(transportService.assignStudentToRoute(dto, schoolId));
     }
 
+    @PutMapping("/student-assignments/{id}")
+    public ResponseEntity<StudentAssignmentDto> updateStudentAssignment(
+            @PathVariable Long id,
+            @RequestBody StudentAssignmentDto dto,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.ok(transportService.updateStudentAssignment(id, dto, schoolId));
+    }
+
     @DeleteMapping("/student-assignments/{id}")
     public ResponseEntity<Map<String, String>> removeStudentAssignment(
             @PathVariable Long id,
@@ -229,6 +237,23 @@ public class TransportController {
             @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
         transportService.updateStudentPickupStatus(id, status, schoolId);
         return ResponseEntity.ok(Map.of("message", "Status updated to " + status));
+    }
+
+    // ==========================================
+    // TRANSPORT FEES & PAYMENTS
+    // ==========================================
+
+    @GetMapping("/fees/summary")
+    public ResponseEntity<TransportFeeSummaryDto> getFeeSummary(
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.ok(transportService.getFeeSummary(schoolId));
+    }
+
+    @PostMapping("/fees/collect")
+    public ResponseEntity<TransportPaymentDto> collectFee(
+            @RequestBody TransportPaymentDto dto,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(transportService.collectFee(dto, schoolId));
     }
 
     // ==========================================

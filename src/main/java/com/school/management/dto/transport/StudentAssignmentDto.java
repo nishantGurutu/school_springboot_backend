@@ -23,6 +23,13 @@ public class StudentAssignmentDto {
     private String pickupTime;
     private String dropTime;
     private String guardianPhone;
+    private String tripType;
+    private java.time.LocalDate startDate;
+    private java.time.LocalDate endDate;
+    private Double monthlyFee;
+    private String feeStatus;
+    private Double paidAmount;
+    private Double pendingAmount;
     private String status;
     private String pickupStatus;
 }

@@ -22,6 +22,7 @@ public class BusDto {
     private String gpsDeviceId;
     private LocalDate insuranceExpiryDate;
     private LocalDate fitnessExpiryDate;
+    private LocalDate permitExpiryDate;
     private LocalDate pollutionExpiryDate;
     private String status;
     private Double currentSpeed;

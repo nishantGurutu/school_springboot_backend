@@ -41,8 +41,13 @@ public interface TransportService {
     // Student Transport Assignments
     List<StudentAssignmentDto> getStudentAssignments(String schoolId);
     StudentAssignmentDto assignStudentToRoute(StudentAssignmentDto dto, String schoolId);
+    StudentAssignmentDto updateStudentAssignment(Long id, StudentAssignmentDto dto, String schoolId);
     void removeStudentAssignment(Long id, String schoolId);
     void updateStudentPickupStatus(Long assignmentId, String status, String schoolId);
+
+    // Transport Fees & Payments
+    TransportFeeSummaryDto getFeeSummary(String schoolId);
+    TransportPaymentDto collectFee(TransportPaymentDto dto, String schoolId);
 
     // Driver App Core Operations
     TripDtos.DriverDutyDto getDriverDuty(String driverEmail);

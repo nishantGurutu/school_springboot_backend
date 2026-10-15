@@ -3,6 +3,7 @@ package com.school.management.entity.transport;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -55,6 +56,24 @@ public class StudentTransportAssignmentEntity {
 
     @Column(name = "guardian_phone", length = 32)
     private String guardianPhone;
+
+    @Column(name = "trip_type", length = 32)
+    @Builder.Default
+    private String tripType = "BOTH_WAY"; // ONE_WAY, BOTH_WAY
+
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    @Column(name = "monthly_fee")
+    @Builder.Default
+    private Double monthlyFee = 1500.0;
+
+    @Column(name = "fee_status", length = 32)
+    @Builder.Default
+    private String feeStatus = "PAID"; // PAID, PENDING, OVERDUE
 
     @Column(nullable = false, length = 32)
     @Builder.Default

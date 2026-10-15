@@ -55,12 +55,15 @@ public class BusEntity {
     @Column(name = "fitness_expiry_date")
     private LocalDate fitnessExpiryDate;
 
+    @Column(name = "permit_expiry_date")
+    private LocalDate permitExpiryDate;
+
     @Column(name = "pollution_expiry_date")
     private LocalDate pollutionExpiryDate;
 
     @Column(nullable = false, length = 32)
     @Builder.Default
-    private String status = "ACTIVE"; // ACTIVE, MAINTENANCE, OUT_OF_SERVICE
+    private String status = "ACTIVE"; // ACTIVE, INACTIVE, MAINTENANCE
 
     // Live GPS telemetry snapshot cache
     @Column(name = "current_speed")

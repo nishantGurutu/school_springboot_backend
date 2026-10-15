@@ -2,11 +2,14 @@ package com.school.management.service.transport.impl;
 
 import com.school.management.domain.user.Role;
 import com.school.management.dto.transport.*;
+import com.school.management.entity.TeacherEntity;
 import com.school.management.entity.UserEntity;
 import com.school.management.entity.transport.*;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.exceptions.UnauthorizedException;
+import com.school.management.repository.TeacherRepository;
 import com.school.management.repository.UserRepository;
+import com.school.management.repository.StudentRepository;
 import com.school.management.repository.transport.*;
 import com.school.management.service.transport.TransportService;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,9 @@ public class TransportServiceImpl implements TransportService {
     private final TransportAuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TeacherRepository teacherRepository;
+    private final TransportFeePaymentRepository feePaymentRepository;
+    private final StudentRepository studentRepository;
 
     private static final String DEFAULT_SCHOOL_ID = "SCH-001";
 
@@ -128,6 +134,7 @@ public class TransportServiceImpl implements TransportService {
                 .insuranceExpiryDate(dto.getInsuranceExpiryDate())
                 .fitnessExpiryDate(dto.getFitnessExpiryDate())
                 .pollutionExpiryDate(dto.getPollutionExpiryDate())
+                .permitExpiryDate(dto.getPermitExpiryDate())
                 .status(dto.getStatus() != null ? dto.getStatus() : "ACTIVE")
                 .build();
 
@@ -152,6 +159,7 @@ public class TransportServiceImpl implements TransportService {
         if (dto.getInsuranceExpiryDate() != null) bus.setInsuranceExpiryDate(dto.getInsuranceExpiryDate());
         if (dto.getFitnessExpiryDate() != null) bus.setFitnessExpiryDate(dto.getFitnessExpiryDate());
         if (dto.getPollutionExpiryDate() != null) bus.setPollutionExpiryDate(dto.getPollutionExpiryDate());
+        if (dto.getPermitExpiryDate() != null) bus.setPermitExpiryDate(dto.getPermitExpiryDate());
         if (dto.getStatus() != null) bus.setStatus(dto.getStatus());
 
         BusEntity updated = busRepository.save(bus);
@@ -182,6 +190,7 @@ public class TransportServiceImpl implements TransportService {
                 .insuranceExpiryDate(bus.getInsuranceExpiryDate())
                 .fitnessExpiryDate(bus.getFitnessExpiryDate())
                 .pollutionExpiryDate(bus.getPollutionExpiryDate())
+                .permitExpiryDate(bus.getPermitExpiryDate())
                 .status(bus.getStatus())
                 .currentSpeed(bus.getCurrentSpeed())
                 .lastLatitude(bus.getLastLatitude())
@@ -209,13 +218,56 @@ public class TransportServiceImpl implements TransportService {
     // ==========================================
 
     @Override
-    @Transactional(readOnly = true)
     public List<DriverDto> getAllDrivers(String schoolId) {
         String sId = resolveSchool(schoolId);
         seedInitialTransportDataIfEmpty(sId);
+        syncDriversFromStaff(sId);
         return driverRepository.findBySchoolId(sId).stream()
                 .map(this::mapToDriverDto)
                 .collect(Collectors.toList());
+    }
+
+    private void syncDriversFromStaff(String sId) {
+        try {
+            List<TeacherEntity> staffList = teacherRepository.findAll();
+            for (TeacherEntity staff : staffList) {
+                boolean isDriver = (staff.getDesignation() != null && staff.getDesignation().toLowerCase().contains("driver"))
+                        || (staff.getDepartment() != null && staff.getDepartment().toLowerCase().contains("transport"))
+                        || ("Driver".equalsIgnoreCase(staff.getType()));
+                if (isDriver) {
+                    String email = (staff.getEmail() != null && !staff.getEmail().isBlank())
+                            ? staff.getEmail().trim().toLowerCase()
+                            : ("driver." + staff.getEmployeeId() + "@school.com").toLowerCase();
+
+                    if (driverRepository.findByEmailIgnoreCase(email).isEmpty()) {
+                        String fullName = ((staff.getFirstName() != null ? staff.getFirstName() : "") + " " +
+                                (staff.getLastName() != null ? staff.getLastName() : "")).trim();
+                        if (fullName.isBlank()) fullName = "Staff Driver " + staff.getEmployeeId();
+
+                        DriverProfileEntity newDriver = DriverProfileEntity.builder()
+                                .schoolId(sId)
+                                .name(fullName)
+                                .email(email)
+                                .phone(staff.getPhone() != null ? staff.getPhone() : "+91 98000 00000")
+                                .licenseNumber("DL-" + (staff.getEmployeeId() != null ? staff.getEmployeeId() : "IND" + (1000 + staff.getId())))
+                                .licenseExpiryDate(LocalDate.now().plusYears(4))
+                                .licenseCategory("COMMERCIAL_HEAVY")
+                                .experienceYears(staff.getExperienceYears() != null ? staff.getExperienceYears() : 5)
+                                .joiningDate(staff.getJoiningDate() != null ? staff.getJoiningDate() : LocalDate.now())
+                                .verificationStatus("VERIFIED")
+                                .status("ACTIVE")
+                                .avatarUrl(staff.getAvatar())
+                                .emergencyContact(staff.getPhone())
+                                .address(staff.getAddress() != null ? staff.getAddress() : "Campus Staff Quarters")
+                                .build();
+                        driverRepository.save(newDriver);
+                        log.info("Auto-synced teacher/staff driver {} into transport driver profiles.", fullName);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Auto-sync drivers from staff failed: {}", ex.getMessage());
+        }
     }
 
     @Override
@@ -255,6 +307,7 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(dto.getLicenseExpiryDate())
                 .licenseCategory(dto.getLicenseCategory() != null ? dto.getLicenseCategory() : "COMMERCIAL_HEAVY")
                 .experienceYears(dto.getExperienceYears() != null ? dto.getExperienceYears() : 5)
+                .joiningDate(dto.getJoiningDate() != null ? dto.getJoiningDate() : LocalDate.now())
                 .verificationStatus(dto.getVerificationStatus() != null ? dto.getVerificationStatus() : "VERIFIED")
                 .status(dto.getStatus() != null ? dto.getStatus() : "ACTIVE")
                 .avatarUrl(dto.getAvatarUrl())
@@ -279,6 +332,7 @@ public class TransportServiceImpl implements TransportService {
         if (dto.getLicenseExpiryDate() != null) driver.setLicenseExpiryDate(dto.getLicenseExpiryDate());
         if (dto.getLicenseCategory() != null) driver.setLicenseCategory(dto.getLicenseCategory());
         if (dto.getExperienceYears() != null) driver.setExperienceYears(dto.getExperienceYears());
+        if (dto.getJoiningDate() != null) driver.setJoiningDate(dto.getJoiningDate());
         if (dto.getVerificationStatus() != null) driver.setVerificationStatus(dto.getVerificationStatus());
         if (dto.getStatus() != null) driver.setStatus(dto.getStatus());
         if (dto.getAvatarUrl() != null) driver.setAvatarUrl(dto.getAvatarUrl());
@@ -311,6 +365,7 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(driver.getLicenseExpiryDate())
                 .licenseCategory(driver.getLicenseCategory())
                 .experienceYears(driver.getExperienceYears())
+                .joiningDate(driver.getJoiningDate())
                 .verificationStatus(driver.getVerificationStatus())
                 .status(driver.getStatus())
                 .avatarUrl(driver.getAvatarUrl())
@@ -367,6 +422,8 @@ public class TransportServiceImpl implements TransportService {
                 .description(dto.getDescription())
                 .startLocation(dto.getStartLocation())
                 .endLocation(dto.getEndLocation())
+                .areaLocality(dto.getAreaLocality())
+                .fare(dto.getFare() != null ? dto.getFare() : 1500.0)
                 .plannedDurationMinutes(dto.getPlannedDurationMinutes() != null ? dto.getPlannedDurationMinutes() : 45)
                 .totalDistanceKm(dto.getTotalDistanceKm() != null ? dto.getTotalDistanceKm() : 15.0)
                 .morningStartTime(dto.getMorningStartTime() != null ? dto.getMorningStartTime() : "07:15 AM")
@@ -396,6 +453,8 @@ public class TransportServiceImpl implements TransportService {
         if (dto.getDescription() != null) route.setDescription(dto.getDescription());
         if (dto.getStartLocation() != null) route.setStartLocation(dto.getStartLocation());
         if (dto.getEndLocation() != null) route.setEndLocation(dto.getEndLocation());
+        if (dto.getAreaLocality() != null) route.setAreaLocality(dto.getAreaLocality());
+        if (dto.getFare() != null) route.setFare(dto.getFare());
         if (dto.getPlannedDurationMinutes() != null) route.setPlannedDurationMinutes(dto.getPlannedDurationMinutes());
         if (dto.getTotalDistanceKm() != null) route.setTotalDistanceKm(dto.getTotalDistanceKm());
         if (dto.getMorningStartTime() != null) route.setMorningStartTime(dto.getMorningStartTime());
@@ -465,6 +524,8 @@ public class TransportServiceImpl implements TransportService {
                 .description(route.getDescription())
                 .startLocation(route.getStartLocation())
                 .endLocation(route.getEndLocation())
+                .areaLocality(route.getAreaLocality())
+                .fare(route.getFare())
                 .plannedDurationMinutes(route.getPlannedDurationMinutes())
                 .totalDistanceKm(route.getTotalDistanceKm())
                 .morningStartTime(route.getMorningStartTime())
@@ -623,6 +684,15 @@ public class TransportServiceImpl implements TransportService {
     @Override
     public StudentAssignmentDto assignStudentToRoute(StudentAssignmentDto dto, String schoolId) {
         String sId = resolveSchool(schoolId);
+
+        Double fee = dto.getMonthlyFee();
+        if (fee == null || fee <= 0) {
+            fee = routeRepository.findById(dto.getRouteId()).map(TransportRouteEntity::getFare).orElse(1500.0);
+            if ("ONE_WAY".equalsIgnoreCase(dto.getTripType())) {
+                fee = fee * 0.6;
+            }
+        }
+
         StudentTransportAssignmentEntity entity = StudentTransportAssignmentEntity.builder()
                 .schoolId(sId)
                 .studentId(dto.getStudentId())
@@ -635,12 +705,45 @@ public class TransportServiceImpl implements TransportService {
                 .pickupTime(dto.getPickupTime())
                 .dropTime(dto.getDropTime())
                 .guardianPhone(dto.getGuardianPhone())
+                .tripType(dto.getTripType() != null ? dto.getTripType() : "BOTH_WAY")
+                .startDate(dto.getStartDate() != null ? dto.getStartDate() : LocalDate.now())
+                .endDate(dto.getEndDate())
+                .monthlyFee(fee)
+                .feeStatus(dto.getFeeStatus() != null ? dto.getFeeStatus() : "PENDING")
                 .status("ACTIVE")
                 .pickupStatus("SCHEDULED")
                 .build();
 
         StudentTransportAssignmentEntity saved = studentAssignmentRepository.save(entity);
         logAudit(sId, "STUDENT_ASSIGNED", "STUDENT", saved.getStudentId(), "Assigned student to route " + saved.getRouteId());
+        return mapToStudentAssignmentDto(saved);
+    }
+
+    @Override
+    public StudentAssignmentDto updateStudentAssignment(Long id, StudentAssignmentDto dto, String schoolId) {
+        String sId = resolveSchool(schoolId);
+        StudentTransportAssignmentEntity entity = studentAssignmentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student assignment not found with id: " + id));
+
+        if (dto.getStudentName() != null) entity.setStudentName(dto.getStudentName());
+        if (dto.getAdmissionNo() != null) entity.setAdmissionNo(dto.getAdmissionNo());
+        if (dto.getClassName() != null) entity.setClassName(dto.getClassName());
+        if (dto.getRouteId() != null) entity.setRouteId(dto.getRouteId());
+        if (dto.getPickupStopId() != null) entity.setPickupStopId(dto.getPickupStopId());
+        if (dto.getDropStopId() != null) entity.setDropStopId(dto.getDropStopId());
+        if (dto.getPickupTime() != null) entity.setPickupTime(dto.getPickupTime());
+        if (dto.getDropTime() != null) entity.setDropTime(dto.getDropTime());
+        if (dto.getGuardianPhone() != null) entity.setGuardianPhone(dto.getGuardianPhone());
+        if (dto.getTripType() != null) entity.setTripType(dto.getTripType());
+        if (dto.getStartDate() != null) entity.setStartDate(dto.getStartDate());
+        if (dto.getEndDate() != null) entity.setEndDate(dto.getEndDate());
+        if (dto.getMonthlyFee() != null) entity.setMonthlyFee(dto.getMonthlyFee());
+        if (dto.getFeeStatus() != null) entity.setFeeStatus(dto.getFeeStatus());
+        if (dto.getStatus() != null) entity.setStatus(dto.getStatus());
+        if (dto.getPickupStatus() != null) entity.setPickupStatus(dto.getPickupStatus());
+
+        StudentTransportAssignmentEntity saved = studentAssignmentRepository.save(entity);
+        logAudit(sId, "STUDENT_ASSIGNMENT_UPDATED", "STUDENT", saved.getStudentId(), "Updated student transport assignment " + id);
         return mapToStudentAssignmentDto(saved);
     }
 
@@ -661,6 +764,20 @@ public class TransportServiceImpl implements TransportService {
     }
 
     private StudentAssignmentDto mapToStudentAssignmentDto(StudentTransportAssignmentEntity s) {
+        List<TransportFeePaymentEntity> payments = feePaymentRepository.findByAssignmentId(s.getId());
+        double paid = payments.stream().mapToDouble(p -> p.getAmountPaid() != null ? p.getAmountPaid() : 0.0).sum();
+        double fee = s.getMonthlyFee() != null ? s.getMonthlyFee() : 0.0;
+        double pending = Math.max(0.0, fee - paid);
+
+        String currentFeeStatus = s.getFeeStatus();
+        if (paid >= fee && fee > 0) {
+            currentFeeStatus = "PAID";
+        } else if (paid > 0 && paid < fee) {
+            currentFeeStatus = "PARTIAL";
+        } else if (currentFeeStatus == null || currentFeeStatus.isBlank()) {
+            currentFeeStatus = "PENDING";
+        }
+
         StudentAssignmentDto dto = StudentAssignmentDto.builder()
                 .id(s.getId())
                 .schoolId(s.getSchoolId())
@@ -674,6 +791,13 @@ public class TransportServiceImpl implements TransportService {
                 .pickupTime(s.getPickupTime())
                 .dropTime(s.getDropTime())
                 .guardianPhone(s.getGuardianPhone())
+                .tripType(s.getTripType() != null ? s.getTripType() : "BOTH_WAY")
+                .startDate(s.getStartDate())
+                .endDate(s.getEndDate())
+                .monthlyFee(s.getMonthlyFee())
+                .feeStatus(currentFeeStatus)
+                .paidAmount(paid)
+                .pendingAmount(pending)
                 .status(s.getStatus())
                 .pickupStatus(s.getPickupStatus())
                 .build();
@@ -686,6 +810,118 @@ public class TransportServiceImpl implements TransportService {
             stopRepository.findById(s.getDropStopId()).ifPresent(st -> dto.setDropStopName(st.getStopName()));
         }
         return dto;
+    }
+
+    // ==========================================
+    // TRANSPORT FEES & PAYMENTS
+    // ==========================================
+
+    @Override
+    @Transactional(readOnly = true)
+    public TransportFeeSummaryDto getFeeSummary(String schoolId) {
+        String sId = resolveSchool(schoolId);
+        seedInitialTransportDataIfEmpty(sId);
+
+        List<StudentTransportAssignmentEntity> assignments = studentAssignmentRepository.findBySchoolId(sId);
+        List<StudentAssignmentDto> studentRecords = assignments.stream()
+                .map(this::mapToStudentAssignmentDto)
+                .collect(Collectors.toList());
+
+        List<TransportFeePaymentEntity> paymentEntities = feePaymentRepository.findBySchoolIdOrderByPaymentDateDesc(sId);
+        List<TransportPaymentDto> recentPayments = paymentEntities.stream()
+                .map(this::mapToPaymentDto)
+                .collect(Collectors.toList());
+
+        double totalAssessed = studentRecords.stream()
+                .mapToDouble(s -> s.getMonthlyFee() != null ? s.getMonthlyFee() : 0.0)
+                .sum();
+        double totalCollected = recentPayments.stream()
+                .mapToDouble(p -> p.getAmountPaid() != null ? p.getAmountPaid() : 0.0)
+                .sum();
+        double totalPending = Math.max(0.0, totalAssessed - totalCollected);
+        double totalOverdue = studentRecords.stream()
+                .filter(s -> "OVERDUE".equalsIgnoreCase(s.getFeeStatus()))
+                .mapToDouble(s -> s.getPendingAmount() != null ? s.getPendingAmount() : 0.0)
+                .sum();
+
+        long paidCount = studentRecords.stream().filter(s -> "PAID".equalsIgnoreCase(s.getFeeStatus())).count();
+        long pendingCount = studentRecords.stream().filter(s -> "PENDING".equalsIgnoreCase(s.getFeeStatus()) || "PARTIAL".equalsIgnoreCase(s.getFeeStatus())).count();
+        long overdueCount = studentRecords.stream().filter(s -> "OVERDUE".equalsIgnoreCase(s.getFeeStatus())).count();
+
+        return TransportFeeSummaryDto.builder()
+                .totalAssessed(totalAssessed)
+                .totalCollected(totalCollected)
+                .totalPending(totalPending)
+                .totalOverdue(totalOverdue)
+                .paidCount(paidCount)
+                .pendingCount(pendingCount)
+                .overdueCount(overdueCount)
+                .studentRecords(studentRecords)
+                .recentPayments(recentPayments)
+                .build();
+    }
+
+    @Override
+    public TransportPaymentDto collectFee(TransportPaymentDto dto, String schoolId) {
+        String sId = resolveSchool(schoolId);
+
+        String receiptNo = (dto.getReceiptNumber() != null && !dto.getReceiptNumber().isBlank())
+                ? dto.getReceiptNumber()
+                : "TR-REC-" + System.currentTimeMillis();
+
+        TransportFeePaymentEntity payment = TransportFeePaymentEntity.builder()
+                .schoolId(sId)
+                .assignmentId(dto.getAssignmentId())
+                .studentId(dto.getStudentId())
+                .studentName(dto.getStudentName())
+                .admissionNo(dto.getAdmissionNo())
+                .receiptNumber(receiptNo)
+                .amountPaid(dto.getAmountPaid() != null ? dto.getAmountPaid() : 0.0)
+                .paymentDate(dto.getPaymentDate() != null ? dto.getPaymentDate() : LocalDate.now())
+                .paymentMode(dto.getPaymentMode() != null ? dto.getPaymentMode() : "CASH")
+                .feeMonth(dto.getFeeMonth() != null ? dto.getFeeMonth() : LocalDate.now().getMonth().name())
+                .remarks(dto.getRemarks())
+                .receivedBy(dto.getReceivedBy() != null ? dto.getReceivedBy() : "Admin Office")
+                .build();
+
+        TransportFeePaymentEntity saved = feePaymentRepository.save(payment);
+
+        if (dto.getAssignmentId() != null) {
+            studentAssignmentRepository.findById(dto.getAssignmentId()).ifPresent(as -> {
+                List<TransportFeePaymentEntity> allPaid = feePaymentRepository.findByAssignmentId(as.getId());
+                double totalPaid = allPaid.stream().mapToDouble(p -> p.getAmountPaid() != null ? p.getAmountPaid() : 0.0).sum();
+                double fee = as.getMonthlyFee() != null ? as.getMonthlyFee() : 0.0;
+                if (totalPaid >= fee && fee > 0) {
+                    as.setFeeStatus("PAID");
+                } else if (totalPaid > 0) {
+                    as.setFeeStatus("PARTIAL");
+                } else {
+                    as.setFeeStatus("PENDING");
+                }
+                studentAssignmentRepository.save(as);
+            });
+        }
+
+        logAudit(sId, "TRANSPORT_FEE_COLLECTED", "PAYMENT", saved.getId(), "Collected transport fee of Rs. " + saved.getAmountPaid() + " from " + saved.getStudentName());
+        return mapToPaymentDto(saved);
+    }
+
+    private TransportPaymentDto mapToPaymentDto(TransportFeePaymentEntity p) {
+        return TransportPaymentDto.builder()
+                .id(p.getId())
+                .schoolId(p.getSchoolId())
+                .assignmentId(p.getAssignmentId())
+                .studentId(p.getStudentId())
+                .studentName(p.getStudentName())
+                .admissionNo(p.getAdmissionNo())
+                .receiptNumber(p.getReceiptNumber())
+                .amountPaid(p.getAmountPaid())
+                .paymentDate(p.getPaymentDate())
+                .paymentMode(p.getPaymentMode())
+                .feeMonth(p.getFeeMonth())
+                .remarks(p.getRemarks())
+                .receivedBy(p.getReceivedBy())
+                .build();
     }
 
     // ==========================================
@@ -1587,6 +1823,7 @@ public class TransportServiceImpl implements TransportService {
                 .insuranceExpiryDate(LocalDate.now().plusMonths(9))
                 .fitnessExpiryDate(LocalDate.now().plusMonths(11))
                 .pollutionExpiryDate(LocalDate.now().plusMonths(5))
+                .permitExpiryDate(LocalDate.now().plusMonths(14))
                 .status("ACTIVE")
                 .currentSpeed(0.0)
                 .lastLatitude(25.6120)
@@ -1606,6 +1843,7 @@ public class TransportServiceImpl implements TransportService {
                 .insuranceExpiryDate(LocalDate.now().plusMonths(6))
                 .fitnessExpiryDate(LocalDate.now().plusMonths(8))
                 .pollutionExpiryDate(LocalDate.now().plusMonths(3))
+                .permitExpiryDate(LocalDate.now().plusMonths(12))
                 .status("ACTIVE")
                 .currentSpeed(0.0)
                 .lastLatitude(25.5940)
@@ -1625,6 +1863,7 @@ public class TransportServiceImpl implements TransportService {
                 .insuranceExpiryDate(LocalDate.now().plusMonths(10))
                 .fitnessExpiryDate(LocalDate.now().plusMonths(12))
                 .pollutionExpiryDate(LocalDate.now().plusMonths(6))
+                .permitExpiryDate(LocalDate.now().plusMonths(18))
                 .status("ACTIVE")
                 .currentSpeed(32.5)
                 .lastLatitude(25.6025)
@@ -1656,6 +1895,7 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(LocalDate.now().plusYears(3))
                 .licenseCategory("COMMERCIAL_HEAVY")
                 .experienceYears(8)
+                .joiningDate(LocalDate.now().minusYears(3))
                 .verificationStatus("VERIFIED")
                 .status("ACTIVE")
                 .avatarUrl("https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80")
@@ -1673,6 +1913,7 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(LocalDate.now().plusYears(2))
                 .licenseCategory("COMMERCIAL_HEAVY")
                 .experienceYears(6)
+                .joiningDate(LocalDate.now().minusYears(2))
                 .verificationStatus("VERIFIED")
                 .status("ACTIVE")
                 .avatarUrl("https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80")
@@ -1691,6 +1932,8 @@ public class TransportServiceImpl implements TransportService {
                 .description("Serves North City, City Center, Metro Station, and School North Gate")
                 .startLocation("North City Square")
                 .endLocation("School Main Gate")
+                .areaLocality("North City & Bailey Road")
+                .fare(1800.0)
                 .plannedDurationMinutes(45)
                 .totalDistanceKm(18.5)
                 .morningStartTime("07:15 AM")
@@ -1706,6 +1949,8 @@ public class TransportServiceImpl implements TransportService {
                 .description("Covers Southern Apartments, Central Market, and Green Park")
                 .startLocation("Green Park Gate 1")
                 .endLocation("School Main Gate")
+                .areaLocality("Kankarbagh & South Residency")
+                .fare(2200.0)
                 .plannedDurationMinutes(50)
                 .totalDistanceKm(22.0)
                 .morningStartTime("07:05 AM")
@@ -1763,6 +2008,10 @@ public class TransportServiceImpl implements TransportService {
                 .pickupTime("07:25 AM")
                 .dropTime("03:20 PM")
                 .guardianPhone("+91 98765 11111")
+                .tripType("BOTH_WAY")
+                .startDate(LocalDate.now().minusMonths(2))
+                .monthlyFee(1800.0)
+                .feeStatus("PAID")
                 .status("ACTIVE")
                 .pickupStatus("PICKED_UP")
                 .build();
@@ -1779,11 +2028,32 @@ public class TransportServiceImpl implements TransportService {
                 .pickupTime("07:35 AM")
                 .dropTime("03:10 PM")
                 .guardianPhone("+91 98765 22222")
+                .tripType("BOTH_WAY")
+                .startDate(LocalDate.now().minusMonths(2))
+                .monthlyFee(1800.0)
+                .feeStatus("PENDING")
                 .status("ACTIVE")
                 .pickupStatus("SCHEDULED")
                 .build();
 
         studentAssignmentRepository.saveAll(List.of(sa1, sa2));
+
+        // Seed a demo fee payment for sa1
+        TransportFeePaymentEntity demoPayment = TransportFeePaymentEntity.builder()
+                .schoolId(sId)
+                .assignmentId(sa1.getId())
+                .studentId(sa1.getStudentId())
+                .studentName(sa1.getStudentName())
+                .admissionNo(sa1.getAdmissionNo())
+                .receiptNumber("TR-REC-2026-001")
+                .amountPaid(1800.0)
+                .paymentDate(LocalDate.now().minusDays(5))
+                .paymentMode("UPI")
+                .feeMonth(LocalDate.now().getMonth().name())
+                .remarks("Online Fee Portal payment")
+                .receivedBy("Accounts Dept")
+                .build();
+        feePaymentRepository.save(demoPayment);
 
         // 6. Seed Active Demo Trip for Bus 04 with GPS points
         TransportTripEntity activeTrip = TransportTripEntity.builder()

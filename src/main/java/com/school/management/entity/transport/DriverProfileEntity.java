@@ -77,6 +77,9 @@ public class DriverProfileEntity {
     @Column(name = "assigned_route_id")
     private Long assignedRouteId;
 
+    @Column(name = "joining_date")
+    private LocalDate joiningDate;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

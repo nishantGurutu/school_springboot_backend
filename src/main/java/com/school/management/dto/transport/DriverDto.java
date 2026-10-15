@@ -19,6 +19,7 @@ public class DriverDto {
     private String password; // optional on create/update
     private String licenseNumber;
     private LocalDate licenseExpiryDate;
+    private LocalDate joiningDate;
     private String licenseCategory;
     private Integer experienceYears;
     private String verificationStatus;

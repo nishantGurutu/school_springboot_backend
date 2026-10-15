@@ -34,11 +34,18 @@ public class TransportRouteEntity {
     @Column(length = 256)
     private String description;
 
+    @Column(name = "area_locality", length = 128)
+    private String areaLocality; // e.g. "Rohini / North Sector"
+
     @Column(name = "start_location", length = 128)
     private String startLocation;
 
     @Column(name = "end_location", length = 128)
     private String endLocation;
+
+    @Column(name = "fare")
+    @Builder.Default
+    private Double fare = 1500.0;
 
     @Column(name = "planned_duration_minutes")
     @Builder.Default
