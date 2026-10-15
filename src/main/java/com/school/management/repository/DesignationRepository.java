@@ -13,11 +13,21 @@ public interface DesignationRepository extends JpaRepository<DesignationEntity, 
 
     boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 
+    boolean existsByDepartmentIdAndNameIgnoreCase(Long departmentId, String name);
+
+    boolean existsByDepartmentIdAndNameIgnoreCaseAndIdNot(Long departmentId, String name, Long id);
+
     boolean existsByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
 
+    boolean existsByDepartmentIdAndCodeIgnoreCase(Long departmentId, String code);
+
+    boolean existsByDepartmentIdAndCodeIgnoreCaseAndIdNot(Long departmentId, String code, Long id);
+
     List<DesignationEntity> findAllByOrderByIdAsc();
+
+    List<DesignationEntity> findByDepartmentIdOrderByIdAsc(Long departmentId);
 
     List<DesignationEntity> findByStatusIgnoreCaseOrderByIdAsc(String status);
 }

@@ -27,6 +27,12 @@ public class DesignationController {
         return ResponseEntity.ok(designationService.getAll());
     }
 
+    @GetMapping("/department/{departmentId}")
+    @Operation(summary = "List designations by department ID")
+    public ResponseEntity<List<DesignationResponse>> getByDepartment(@PathVariable Long departmentId) {
+        return ResponseEntity.ok(designationService.getByDepartmentId(departmentId));
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get designation details by ID")
     public ResponseEntity<DesignationResponse> getById(@PathVariable Long id) {

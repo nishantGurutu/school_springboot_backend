@@ -2,9 +2,11 @@ package com.school.management.service;
 
 import com.school.management.dto.DesignationRequest;
 import com.school.management.dto.DesignationResponse;
+import com.school.management.entity.DepartmentEntity;
 import com.school.management.entity.DesignationEntity;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
+import com.school.management.repository.DepartmentRepository;
 import com.school.management.repository.DesignationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,10 +21,18 @@ import java.util.List;
 public class DesignationService {
 
     private final DesignationRepository designationRepository;
+    private final DepartmentRepository departmentRepository;
 
     @Transactional(readOnly = true)
     public List<DesignationResponse> getAll() {
         return designationRepository.findAllByOrderByIdAsc().stream()
+                .map(DesignationResponse::fromEntity)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<DesignationResponse> getByDepartmentId(Long departmentId) {
+        return designationRepository.findByDepartmentIdOrderByIdAsc(departmentId).stream()
                 .map(DesignationResponse::fromEntity)
                 .toList();
     }
@@ -37,24 +47,38 @@ public class DesignationService {
     @Transactional
     public DesignationResponse create(DesignationRequest request) {
         String trimmedName = request.getName().trim();
-        if (designationRepository.existsByNameIgnoreCase(trimmedName)) {
-            throw new DuplicateResourceException("Designation already exists with name: " + trimmedName);
+
+        DepartmentEntity department = null;
+        if (request.getDepartmentId() != null) {
+            department = departmentRepository.findById(request.getDepartmentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Department not found with id: " + request.getDepartmentId()));
+
+            if (designationRepository.existsByDepartmentIdAndNameIgnoreCase(department.getId(), trimmedName)) {
+                throw new DuplicateResourceException("Designation '" + trimmedName + "' already exists in " + department.getName() + " department");
+            }
+        } else {
+            if (designationRepository.existsByNameIgnoreCase(trimmedName)) {
+                throw new DuplicateResourceException("Designation already exists with name: " + trimmedName);
+            }
         }
 
         String code = request.getCode() != null && !request.getCode().isBlank()
                 ? request.getCode().trim().toUpperCase()
                 : generateCodeFromName(trimmedName);
 
-        if (code != null && !code.isBlank() && designationRepository.existsByCodeIgnoreCase(code)) {
-            throw new DuplicateResourceException("Designation code already in use: " + code);
+        if (department != null && code != null && !code.isBlank()) {
+            if (designationRepository.existsByDepartmentIdAndCodeIgnoreCase(department.getId(), code)) {
+                throw new DuplicateResourceException("Designation code '" + code + "' already in use in " + department.getName() + " department");
+            }
         }
 
         DesignationEntity entity = DesignationEntity.builder()
                 .name(trimmedName)
                 .code(code)
+                .department(department)
                 .category(request.getCategory() != null && !request.getCategory().isBlank()
                         ? request.getCategory().trim()
-                        : "Teaching")
+                        : "")
                 .description(request.getDescription() != null ? request.getDescription().trim() : "")
                 .status(request.getStatus() != null && !request.getStatus().isBlank()
                         ? request.getStatus().trim()
@@ -62,7 +86,10 @@ public class DesignationService {
                 .build();
 
         DesignationEntity saved = designationRepository.save(entity);
-        log.info("Created designation: {} (ID: {})", saved.getName(), saved.getId());
+        log.info("Created designation: {} under department: {} (ID: {})",
+                saved.getName(),
+                saved.getDepartment() != null ? saved.getDepartment().getName() : "None",
+                saved.getId());
         return DesignationResponse.fromEntity(saved);
     }
 
@@ -72,21 +99,37 @@ public class DesignationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Designation not found with id: " + id));
 
         String trimmedName = request.getName().trim();
-        if (designationRepository.existsByNameIgnoreCaseAndIdNot(trimmedName, id)) {
-            throw new DuplicateResourceException("Another designation already exists with name: " + trimmedName);
+
+        DepartmentEntity department = entity.getDepartment();
+        if (request.getDepartmentId() != null) {
+            department = departmentRepository.findById(request.getDepartmentId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Department not found with id: " + request.getDepartmentId()));
+        }
+
+        if (department != null) {
+            if (designationRepository.existsByDepartmentIdAndNameIgnoreCaseAndIdNot(department.getId(), trimmedName, id)) {
+                throw new DuplicateResourceException("Another designation with name '" + trimmedName + "' already exists in " + department.getName() + " department");
+            }
+        } else {
+            if (designationRepository.existsByNameIgnoreCaseAndIdNot(trimmedName, id)) {
+                throw new DuplicateResourceException("Another designation already exists with name: " + trimmedName);
+            }
         }
 
         String code = request.getCode() != null && !request.getCode().isBlank()
                 ? request.getCode().trim().toUpperCase()
                 : entity.getCode();
 
-        if (code != null && !code.isBlank() && designationRepository.existsByCodeIgnoreCaseAndIdNot(code, id)) {
-            throw new DuplicateResourceException("Another designation already uses code: " + code);
+        if (department != null && code != null && !code.isBlank()) {
+            if (designationRepository.existsByDepartmentIdAndCodeIgnoreCaseAndIdNot(department.getId(), code, id)) {
+                throw new DuplicateResourceException("Another designation in " + department.getName() + " already uses code: " + code);
+            }
         }
 
         entity.setName(trimmedName);
         entity.setCode(code);
-        if (request.getCategory() != null && !request.getCategory().isBlank()) {
+        entity.setDepartment(department);
+        if (request.getCategory() != null) {
             entity.setCategory(request.getCategory().trim());
         }
         if (request.getDescription() != null) {
@@ -97,7 +140,10 @@ public class DesignationService {
         }
 
         DesignationEntity updated = designationRepository.save(entity);
-        log.info("Updated designation: {} (ID: {})", updated.getName(), updated.getId());
+        log.info("Updated designation: {} under department: {} (ID: {})",
+                updated.getName(),
+                updated.getDepartment() != null ? updated.getDepartment().getName() : "None",
+                updated.getId());
         return DesignationResponse.fromEntity(updated);
     }
 

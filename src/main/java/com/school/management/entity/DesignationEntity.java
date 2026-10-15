@@ -7,12 +7,10 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "school_designations", indexes = {
+        @Index(name = "idx_desig_dept", columnList = "department_id"),
         @Index(name = "idx_desig_name", columnList = "name"),
         @Index(name = "idx_desig_code", columnList = "code"),
-        @Index(name = "idx_desig_category", columnList = "category"),
         @Index(name = "idx_desig_status", columnList = "status")
-}, uniqueConstraints = {
-        @UniqueConstraint(name = "uk_desig_name", columnNames = "name")
 })
 @Getter
 @Setter
@@ -25,15 +23,18 @@ public class DesignationEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 128)
+    @Column(nullable = false, length = 128)
     private String name;
 
     @Column(length = 32)
     private String code;
 
-    @Builder.Default
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "department_id")
+    private DepartmentEntity department;
+
     @Column(length = 64)
-    private String category = "Teaching";
+    private String category;
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -55,9 +56,6 @@ public class DesignationEntity {
         if (status == null || status.isBlank()) {
             status = "Active";
         }
-        if (category == null || category.isBlank()) {
-            category = "Teaching";
-        }
     }
 
     @PreUpdate
@@ -65,9 +63,6 @@ public class DesignationEntity {
         updatedAt = LocalDateTime.now();
         if (status == null || status.isBlank()) {
             status = "Active";
-        }
-        if (category == null || category.isBlank()) {
-            category = "Teaching";
         }
     }
 }
