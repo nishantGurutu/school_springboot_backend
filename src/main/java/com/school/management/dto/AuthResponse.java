@@ -23,6 +23,7 @@ public class AuthResponse {
     private Role role;
     private String userType;
     private String className;
+    private String designation;
     private String details;
     private String avatarUrl;
     private Long entityId;

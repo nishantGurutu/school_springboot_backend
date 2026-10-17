@@ -81,7 +81,9 @@ public class TeacherRequest {
 
     private TeacherStatus status;
     private String password;
-    private String type; // Teacher, Principal, Staff
+    private String type; // Teacher, Principal, Staff, Accountant, Librarian, Driver
+    private String userType;
+    private String role;
 
     // Form fields
     private String gender;

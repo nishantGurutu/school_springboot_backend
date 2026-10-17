@@ -73,7 +73,9 @@ public class AuthServiceImpl implements AuthService {
         // 1. Direct lookup by email in users table (case-insensitive)
         Optional<UserEntity> userOpt = userRepository.findByEmailIgnoreCase(cleanInput);
         if (userOpt.isPresent()) {
-            return userOpt.get();
+            UserEntity user = userOpt.get();
+            syncUserRoleIfNeeded(user);
+            return user;
         }
 
         // 2. Lookup in Student entity (by admissionNo, email, rollNo, or phone)
@@ -110,12 +112,20 @@ public class AuthServiceImpl implements AuthService {
         }
         if (teacherOpt.isPresent()) {
             TeacherEntity t = teacherOpt.get();
+            Role resolvedRole = TeacherServiceImpl.resolveTargetRole(t.getType(), t.getDesignation(), t.getDepartment());
             Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(t.getEmail());
             if (existingUser.isPresent()) {
-                return existingUser.get();
+                UserEntity u = existingUser.get();
+                if (u.getRole() != Role.ADMIN && u.getRole() != Role.SUPER_ADMIN && u.getRole() != Role.MASTER_ADMIN) {
+                    if (u.getRole() != resolvedRole) {
+                        u.setRole(resolvedRole);
+                        userRepository.save(u);
+                    }
+                }
+                return u;
             }
             String fullName = (t.getFirstName() != null ? t.getFirstName() : "") + " " + (t.getLastName() != null ? t.getLastName() : "");
-            return createAndSaveUser(t.getEmail(), fullName.trim(), Role.TEACHER, "password");
+            return createAndSaveUser(t.getEmail(), fullName.trim(), resolvedRole, "password");
         }
 
         // 4. Lookup in Guardian entity (by email, phone, or studentAdmissionNo)
@@ -147,9 +157,12 @@ public class AuthServiceImpl implements AuthService {
             StaffEntity st = staffOpt.get();
             Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(st.getEmail());
             if (existingUser.isPresent()) {
-                return existingUser.get();
+                UserEntity u = existingUser.get();
+                syncUserRoleIfNeeded(u);
+                return u;
             }
-            return createAndSaveUser(st.getEmail(), st.getName(), Role.STAFF, "password");
+            Role resolvedRole = resolveStaffRole(st);
+            return createAndSaveUser(st.getEmail(), st.getName(), resolvedRole, "password");
         }
 
         // 6. Lookup in Driver entity (by email, phone, licenseNumber, or "driver" shorthand)
@@ -167,12 +180,122 @@ public class AuthServiceImpl implements AuthService {
             com.school.management.entity.transport.DriverProfileEntity d = driverOpt.get();
             Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(d.getEmail());
             if (existingUser.isPresent()) {
-                return existingUser.get();
+                UserEntity u = existingUser.get();
+                syncUserRoleIfNeeded(u);
+                return u;
             }
             return createAndSaveUser(d.getEmail(), d.getName(), Role.DRIVER, "password");
         }
 
         throw new UnauthorizedException("Invalid credentials");
+    }
+
+    private Role resolveStaffRole(StaffEntity st) {
+        if (st == null) return Role.STAFF;
+        String des = (st.getDesignation() != null ? st.getDesignation() : "").toLowerCase().trim();
+        String type = (st.getStaffType() != null ? st.getStaffType() : "").toLowerCase().trim();
+        String r = (st.getRole() != null ? st.getRole() : "").toLowerCase().trim();
+
+        if (des.contains("driver") || des.contains("conductor") || type.contains("driver") || type.contains("transport") || r.contains("driver")) {
+            return Role.DRIVER;
+        }
+        if (des.contains("princip") || type.contains("princip") || r.contains("princip")) {
+            return Role.PRINCIPAL;
+        }
+        if (des.contains("account") || des.contains("cashier") || type.contains("account") || type.contains("finance") || r.contains("account")) {
+            return Role.ACCOUNTANT;
+        }
+        if (des.contains("librar") || type.contains("librar") || r.contains("librar")) {
+            return Role.LIBRARIAN;
+        }
+        if (des.contains("teacher") || des.contains("faculty") || type.contains("teacher") || r.contains("teacher")) {
+            return Role.TEACHER;
+        }
+        return Role.STAFF;
+    }
+
+    private void syncUserRoleIfNeeded(UserEntity user) {
+        if (user == null || user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN || user.getRole() == Role.MASTER_ADMIN) {
+            return;
+        }
+
+        boolean changed = false;
+
+        // Clean up accidental " Faculty" or " Staff" appended to single names
+        if (user.getName() != null) {
+            String name = user.getName().trim();
+            if (name.endsWith(" Faculty")) {
+                user.setName(name.substring(0, name.length() - 8).trim());
+                changed = true;
+            } else if (name.endsWith(" Staff") && !name.equalsIgnoreCase("Office Staff")) {
+                user.setName(name.substring(0, name.length() - 6).trim());
+                changed = true;
+            }
+        }
+
+        // 1. Check Driver profiles
+        boolean isDriver = user.getRole() == Role.DRIVER || driverRepository.findByEmailIgnoreCase(user.getEmail()).isPresent();
+
+        // 2. Check Staff repository
+        Optional<StaffEntity> staffOpt = staffRepository.findByEmailIgnoreCase(user.getEmail());
+        if (staffOpt.isPresent()) {
+            StaffEntity st = staffOpt.get();
+            Role staffRole = resolveStaffRole(st);
+            if (staffRole == Role.DRIVER) {
+                isDriver = true;
+                if (!"DRIVER".equalsIgnoreCase(st.getRole())) {
+                    st.setRole("DRIVER");
+                    staffRepository.save(st);
+                }
+            } else if (!isDriver && user.getRole() != staffRole && user.getRole() == Role.STAFF) {
+                user.setRole(staffRole);
+                changed = true;
+            }
+        }
+
+        // 3. Check Teacher repository
+        Optional<TeacherEntity> teacherOpt = teacherRepository.findByEmailIgnoreCase(user.getEmail());
+        if (teacherOpt.isPresent()) {
+            TeacherEntity t = teacherOpt.get();
+            Role teacherRole = TeacherServiceImpl.resolveTargetRole(t.getType(), t.getDesignation(), t.getDepartment());
+            if (teacherRole == Role.DRIVER) {
+                isDriver = true;
+            } else if (!isDriver && user.getRole() != teacherRole) {
+                user.setRole(teacherRole);
+                changed = true;
+            }
+        }
+
+        if (isDriver) {
+            if (user.getRole() != Role.DRIVER) {
+                user.setRole(Role.DRIVER);
+                changed = true;
+            }
+            // Ensure DriverProfileEntity exists in transport repository
+            if (driverRepository.findByEmailIgnoreCase(user.getEmail()).isEmpty()) {
+                String phone = staffOpt.map(StaffEntity::getPhone)
+                        .orElseGet(() -> teacherOpt.map(TeacherEntity::getPhone).orElse("+91 98000 00000"));
+                driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
+                        .schoolId("SCH001")
+                        .name(user.getName())
+                        .email(user.getEmail())
+                        .phone(phone != null && !phone.isBlank() ? phone : "+91 98000 00000")
+                        .licenseNumber("DL-IND" + (user.getId() != null ? (1000 + user.getId()) : "042011005"))
+                        .licenseExpiryDate(java.time.LocalDate.now().plusYears(5))
+                        .licenseCategory("COMMERCIAL_HEAVY")
+                        .experienceYears(5)
+                        .joiningDate(java.time.LocalDate.now())
+                        .verificationStatus("VERIFIED")
+                        .status("ACTIVE")
+                        .emergencyContact(phone)
+                        .address("Campus Staff Quarters")
+                        .build());
+            }
+        }
+
+        if (changed) {
+            userRepository.save(user);
+        }
     }
 
     private UserEntity createAndSaveUser(String email, String name, Role role, String rawPassword) {
@@ -189,13 +312,24 @@ public class AuthServiceImpl implements AuthService {
 
     private void enrichAuthResponse(AuthResponse response, UserEntity user) {
         if (user.getRole() == Role.DRIVER) {
-            driverRepository.findByEmailIgnoreCase(user.getEmail()).ifPresent(d -> {
-                setField(response, "className", "Driver");
-                setField(response, "department", "Transport");
-                setField(response, "details", "License: " + d.getLicenseNumber() + " • " + d.getVerificationStatus());
+            setField(response, "className", null);
+            setField(response, "department", "Transport");
+            setField(response, "designation", "Bus Driver");
+
+            driverRepository.findByEmailIgnoreCase(user.getEmail()).ifPresentOrElse(d -> {
+                setField(response, "details", "Bus Driver • Transport (DL: " + d.getLicenseNumber() + ")");
                 setField(response, "avatarUrl", d.getAvatarUrl());
                 setField(response, "entityId", d.getId());
                 setField(response, "phone", d.getPhone());
+                if (d.getName() != null && !d.getName().isBlank()) {
+                    setField(response, "name", d.getName());
+                }
+            }, () -> {
+                staffRepository.findByEmailIgnoreCase(user.getEmail()).ifPresent(st -> {
+                    setField(response, "details", (st.getDesignation() != null ? st.getDesignation() : "Bus Driver") + " • Transport");
+                    setField(response, "entityId", st.getId());
+                    setField(response, "phone", st.getPhone());
+                });
             });
         } else if (user.getRole() == Role.STUDENT) {
             studentRepository.findByEmail(user.getEmail()).ifPresent(s -> {
@@ -206,8 +340,9 @@ public class AuthServiceImpl implements AuthService {
                 setField(response, "phone", s.getPhone());
             });
         } else if (user.getRole() == Role.PARENT) {
+            setField(response, "className", null);
             guardianRepository.findByEmail(user.getEmail()).ifPresent(g -> {
-                setField(response, "className", "Parent of " + (g.getStudentAdmissionNo() != null ? g.getStudentAdmissionNo() : "Student"));
+                setField(response, "designation", "Guardian");
                 setField(response, "details", "Guardian (" + (g.getGuardianType() != null ? g.getGuardianType().name() : "Parent") + ")");
                 setField(response, "avatarUrl", g.getPhoto());
                 setField(response, "entityId", g.getId());
@@ -216,39 +351,45 @@ public class AuthServiceImpl implements AuthService {
         } else if (user.getRole() == Role.TEACHER) {
             teacherRepository.findByEmail(user.getEmail()).ifPresent(t -> {
                 setField(response, "department", t.getDepartment());
-                setField(response, "className", t.getSubject() != null ? t.getSubject() + " Teacher" : "Faculty");
+                setField(response, "designation", t.getDesignation() != null ? t.getDesignation() : "Teacher");
+                setField(response, "className", t.getAssignedClass() != null && !t.getAssignedClass().isBlank() 
+                        ? t.getAssignedClass() : (t.getSubject() != null ? t.getSubject() + " Teacher" : "Faculty"));
                 setField(response, "details", (t.getDesignation() != null ? t.getDesignation() : "Teacher") + " • " + t.getDepartment());
                 setField(response, "avatarUrl", t.getAvatar());
                 setField(response, "entityId", t.getId());
                 setField(response, "phone", t.getPhone());
             });
-        } else if (user.getRole() == Role.STAFF || user.getRole() == Role.PRINCIPAL) {
+        } else if (user.getRole() == Role.STAFF || user.getRole() == Role.PRINCIPAL || user.getRole() == Role.ACCOUNTANT || user.getRole() == Role.LIBRARIAN) {
+            setField(response, "className", null);
             staffRepository.findByEmail(user.getEmail()).ifPresentOrElse(st -> {
-                setField(response, "department", st.getStaffType() != null ? st.getStaffType() : "Administration");
-                setField(response, "className", st.getDesignation() != null ? st.getDesignation() : (user.getRole() == Role.PRINCIPAL ? "Principal" : "Staff Member"));
-                setField(response, "details", (st.getDesignation() != null ? st.getDesignation() : user.getRole().name()) + (st.getStaffType() != null ? " (" + st.getStaffType() + ")" : ""));
+                String desig = st.getDesignation() != null ? st.getDesignation() : (user.getRole() == Role.PRINCIPAL ? "Principal" : user.getRole().name());
+                String dept = st.getStaffType() != null ? st.getStaffType() : "Administration";
+                setField(response, "department", dept);
+                setField(response, "designation", desig);
+                setField(response, "details", desig + " • " + dept);
                 setField(response, "entityId", st.getId());
                 setField(response, "phone", st.getPhone());
             }, () -> {
                 teacherRepository.findByEmail(user.getEmail()).ifPresent(t -> {
+                    String desig = t.getDesignation() != null ? t.getDesignation() : (user.getRole() == Role.PRINCIPAL ? "Principal" : user.getRole().name());
                     setField(response, "department", t.getDepartment());
-                    setField(response, "className", t.getDesignation() != null ? t.getDesignation() : "Principal");
-                    setField(response, "details", (t.getDesignation() != null ? t.getDesignation() : "Principal") + " • " + t.getDepartment());
+                    setField(response, "designation", desig);
+                    setField(response, "details", desig + " • " + t.getDepartment());
                     setField(response, "avatarUrl", t.getAvatar());
                     setField(response, "entityId", t.getId());
                     setField(response, "phone", t.getPhone());
                 });
             });
         } else if (user.getRole() == Role.ADMIN || user.getRole() == Role.MASTER_ADMIN || user.getRole() == Role.SUPER_ADMIN) {
+            setField(response, "className", null);
+            setField(response, "designation", "Administrator");
             setField(response, "department", "Administration");
-            setField(response, "className", "Admin");
             setField(response, "details", "Administrator");
             setField(response, "avatarUrl", "");
         }
     }
 
     private void setField(Object obj, String fieldName, Object val) {
-        if (val == null) return;
         try {
             var field = obj.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);

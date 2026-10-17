@@ -40,6 +40,8 @@ public class TeacherResponse {
     private String avatar;
     private TeacherStatus status;
     private String type;
+    private String role;
+    private String userType;
 
     // Multi-select Assigned Classes
     private List<Long> assignedClassIds;
@@ -99,7 +101,10 @@ public class TeacherResponse {
         res.setJobType(teacher.getJobType());
         res.setAvatar(teacher.getAvatar());
         res.setStatus(teacher.getStatus());
-        res.setType(teacher.getType() != null && !teacher.getType().isBlank() ? teacher.getType() : "Teacher");
+        String effectiveType = teacher.getType() != null && !teacher.getType().isBlank() ? teacher.getType() : "Teacher";
+        res.setType(effectiveType);
+        res.setRole(effectiveType.toUpperCase());
+        res.setUserType(effectiveType.toUpperCase());
 
         // Form fields
         res.setGender(teacher.getGender());

@@ -41,7 +41,7 @@ public class DatabaseSchemaFix {
             try {
                 jdbcTemplate.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
                 jdbcTemplate.execute("ALTER TABLE users ADD CONSTRAINT users_role_check " +
-                        "CHECK (role IN ('MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'PRINCIPAL', 'TEACHER', 'STUDENT', 'PARENT', 'STAFF', 'ACCOUNTANT', 'LIBRARIAN'))");
+                        "CHECK (role IN ('MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'PRINCIPAL', 'TEACHER', 'STUDENT', 'PARENT', 'STAFF', 'ACCOUNTANT', 'LIBRARIAN', 'DRIVER'))");
             } catch (Exception e) {
                 log.warn("Notice updating users_role_check: {}", e.getMessage());
             }

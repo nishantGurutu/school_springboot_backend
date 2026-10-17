@@ -42,6 +42,7 @@ public class TeacherServiceImpl implements TeacherService {
     private final StaffRepository staffRepository;
     private final SchoolClassRepository schoolClassRepository;
     private final SubjectRepository subjectRepository;
+    private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Override
@@ -59,19 +60,12 @@ public class TeacherServiceImpl implements TeacherService {
             throw new DuplicateResourceException("Cannot register a teacher with the Super Admin email");
         }
 
-        String rawType = request.getType();
-        Role targetRole = Role.TEACHER;
-        String normalizedType = "Teacher";
-        if (rawType != null) {
-            String cleanType = rawType.trim().toUpperCase();
-            if (cleanType.equals("PRINCIPAL") || cleanType.contains("PRINCIP")) {
-                targetRole = Role.PRINCIPAL;
-                normalizedType = "Principal";
-            } else if (cleanType.equals("STAFF") || cleanType.contains("STAFF")) {
-                targetRole = Role.STAFF;
-                normalizedType = "Staff";
-            }
-        }
+        Role targetRole = resolveTargetRole(
+                request.getRole() != null ? request.getRole() : (request.getUserType() != null ? request.getUserType() : request.getType()),
+                request.getDesignation(),
+                request.getDepartment()
+        );
+        String normalizedType = normalizeTypeFromRole(targetRole);
 
         String finalDesignation = (request.getDesignation() != null && !request.getDesignation().isBlank())
                 ? request.getDesignation().trim()
@@ -169,7 +163,7 @@ public class TeacherServiceImpl implements TeacherService {
         String rawPassword = (request.getPassword() != null && !request.getPassword().isBlank()) 
                 ? request.getPassword().trim() : "password";
         String teacherEmail = saved.getEmail().trim();
-        String teacherFullName = (saved.getFirstName() + " " + saved.getLastName()).trim();
+        String teacherFullName = (saved.getFirstName() + (saved.getLastName() != null && !saved.getLastName().isBlank() ? " " + saved.getLastName().trim() : "")).trim();
 
         try {
             java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
@@ -195,8 +189,8 @@ public class TeacherServiceImpl implements TeacherService {
         } catch (Exception ignored) {
         }
 
-        // If Principal or Staff, also sync StaffEntity so it appears in Staff / HRM modules
-        if (targetRole == Role.PRINCIPAL || targetRole == Role.STAFF) {
+        // If Principal, Staff, Accountant, Librarian, or Driver, also sync StaffEntity so it appears in Staff / HRM modules
+        if (targetRole != Role.TEACHER) {
             try {
                 java.util.Optional<StaffEntity> existingStaff = staffRepository.findByEmail(teacherEmail);
                 StaffEntity staff = existingStaff.orElseGet(StaffEntity::new);
@@ -209,6 +203,31 @@ public class TeacherServiceImpl implements TeacherService {
                 staff.setStatus("Active");
                 staff.setJoinDate(saved.getJoiningDate() != null ? saved.getJoiningDate().toString() : java.time.LocalDate.now().toString());
                 staffRepository.save(staff);
+            } catch (Exception ignored) {
+            }
+        }
+
+        // If Driver, also sync DriverProfileEntity so it is immediately registered in Transport Module
+        if (targetRole == Role.DRIVER && driverRepository != null) {
+            try {
+                if (driverRepository.findByEmailIgnoreCase(teacherEmail).isEmpty()) {
+                    driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
+                            .schoolId("SCH001")
+                            .name(teacherFullName)
+                            .email(teacherEmail)
+                            .phone(saved.getPhone() != null ? saved.getPhone() : "+91 98000 00000")
+                            .licenseNumber("DL-" + (saved.getEmployeeId() != null ? saved.getEmployeeId() : "IND" + (1000 + saved.getId())))
+                            .licenseExpiryDate(java.time.LocalDate.now().plusYears(5))
+                            .licenseCategory("COMMERCIAL_HEAVY")
+                            .experienceYears(saved.getExperienceYears() != null ? saved.getExperienceYears() : 5)
+                            .joiningDate(saved.getJoiningDate() != null ? saved.getJoiningDate() : java.time.LocalDate.now())
+                            .verificationStatus("VERIFIED")
+                            .status("ACTIVE")
+                            .avatarUrl(saved.getAvatar())
+                            .emergencyContact(saved.getPhone())
+                            .address(saved.getAddress() != null ? saved.getAddress() : "Campus Staff Quarters")
+                            .build());
+                }
             } catch (Exception ignored) {
             }
         }
@@ -348,20 +367,13 @@ public class TeacherServiceImpl implements TeacherService {
         if (request.getPermanentAddress() != null) teacher.setPermanentAddress(request.getPermanentAddress());
         if (request.getTeacherBio() != null) teacher.setTeacherBio(request.getTeacherBio());
 
-        Role updatedRole = null;
-        if (request.getType() != null && !request.getType().isBlank()) {
-            String cleanType = request.getType().trim().toUpperCase();
-            if (cleanType.equals("PRINCIPAL") || cleanType.contains("PRINCIP")) {
-                teacher.setType("Principal");
-                updatedRole = Role.PRINCIPAL;
-            } else if (cleanType.equals("STAFF") || cleanType.contains("STAFF")) {
-                teacher.setType("Staff");
-                updatedRole = Role.STAFF;
-            } else {
-                teacher.setType("Teacher");
-                updatedRole = Role.TEACHER;
-            }
-        }
+        Role updatedRole = resolveTargetRole(
+                request.getRole() != null ? request.getRole() : (request.getUserType() != null ? request.getUserType() : request.getType()),
+                request.getDesignation() != null ? request.getDesignation() : teacher.getDesignation(),
+                request.getDepartment() != null ? request.getDepartment() : teacher.getDepartment()
+        );
+        String updatedType = normalizeTypeFromRole(updatedRole);
+        teacher.setType(updatedType);
 
         TeacherEntity updated = teacherRepository.save(teacher);
 
@@ -382,7 +394,7 @@ public class TeacherServiceImpl implements TeacherService {
         });
 
         // Sync to StaffEntity if applicable
-        if (roleToApply == Role.PRINCIPAL || roleToApply == Role.STAFF) {
+        if (roleToApply != null && roleToApply != Role.TEACHER) {
             try {
                 java.util.Optional<StaffEntity> existingStaff = staffRepository.findByEmail(updatedEmail);
                 StaffEntity staff = existingStaff.orElseGet(StaffEntity::new);
@@ -448,5 +460,79 @@ public class TeacherServiceImpl implements TeacherService {
         String field = sortBy == null || sortBy.isBlank() ? "id" : sortBy;
         Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
         return PageRequest.of(safePage, safeSize, Sort.by(direction, field));
+    }
+
+    public static Role resolveTargetRole(String requestedRoleOrType, String designation, String department) {
+        String desig = designation != null ? designation.trim().toLowerCase() : "";
+        String dept = department != null ? department.trim().toLowerCase() : "";
+        String req = requestedRoleOrType != null ? requestedRoleOrType.trim().toUpperCase() : "";
+
+        // 1. Check Designation keywords (Strongest indicator of specific school job)
+        if (desig.contains("driver") || desig.contains("conductor")) {
+            return Role.DRIVER;
+        }
+        if (desig.contains("princip") || desig.contains("headmaster") || desig.contains("headmistress") || desig.contains("director") || desig.contains("vice princip")) {
+            return Role.PRINCIPAL;
+        }
+        if (desig.contains("account") || desig.contains("cashier") || desig.contains("finance") || desig.contains("bursar")) {
+            return Role.ACCOUNTANT;
+        }
+        if (desig.contains("librar")) {
+            return Role.LIBRARIAN;
+        }
+        if (desig.contains("teacher") || desig.contains("pgt") || desig.contains("tgt") || desig.contains("prt") ||
+            desig.contains("faculty") || desig.contains("lecturer") || desig.contains("professor") || desig.contains("instructor") ||
+            desig.contains("hod") || desig.contains("educator")) {
+            return Role.TEACHER;
+        }
+        if (desig.contains("staff") || desig.contains("clerk") || desig.contains("assistant") || desig.contains("receptionist") ||
+            desig.contains("peon") || desig.contains("guard") || desig.contains("security") || desig.contains("admin") ||
+            desig.contains("caretaker") || desig.contains("warden") || desig.contains("lab assistant") || desig.contains("attendant")) {
+            return Role.STAFF;
+        }
+
+        // 2. Check Department keywords
+        if (dept.contains("transport") || dept.contains("driver")) {
+            return Role.DRIVER;
+        }
+        if (dept.contains("leadership") || dept.contains("princip")) {
+            return Role.PRINCIPAL;
+        }
+        if (dept.contains("account") || dept.contains("finance")) {
+            return Role.ACCOUNTANT;
+        }
+        if (dept.contains("librar")) {
+            return Role.LIBRARIAN;
+        }
+        if (dept.contains("teach") || dept.contains("acad")) {
+            return Role.TEACHER;
+        }
+        if (dept.contains("admin") || dept.contains("office") || dept.contains("support") || dept.contains("staff") || dept.contains("maintenance")) {
+            return Role.STAFF;
+        }
+
+        // 3. Explicit Role/Type when specific
+        if (!req.isBlank()) {
+            if (req.contains("DRIVER")) return Role.DRIVER;
+            if (req.contains("PRINCIP")) return Role.PRINCIPAL;
+            if (req.contains("ACCOUNT")) return Role.ACCOUNTANT;
+            if (req.contains("LIBRAR")) return Role.LIBRARIAN;
+            if (req.contains("TEACH")) return Role.TEACHER;
+            if (req.contains("STAFF")) return Role.STAFF;
+        }
+
+        return Role.STAFF;
+    }
+
+    public static String normalizeTypeFromRole(Role role) {
+        if (role == null) return "Staff";
+        switch (role) {
+            case PRINCIPAL: return "Principal";
+            case ACCOUNTANT: return "Accountant";
+            case LIBRARIAN: return "Librarian";
+            case DRIVER: return "Driver";
+            case TEACHER: return "Teacher";
+            default: return "Staff";
+        }
     }
 }

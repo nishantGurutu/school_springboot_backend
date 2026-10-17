@@ -22,6 +22,7 @@ public class StaffService {
 
     private final StaffRepository staffRepository;
     private final UserRepository userRepository;
+    private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Transactional(readOnly = true)
@@ -64,6 +65,30 @@ public class StaffService {
                 user.setRole(targetRole);
                 userRepository.save(user);
             }
+
+            // Sync driver profile if targetRole is DRIVER
+            if (targetRole == Role.DRIVER && driverRepository != null) {
+                try {
+                    if (driverRepository.findByEmailIgnoreCase(staffEmail).isEmpty()) {
+                        driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
+                                .schoolId("SCH001")
+                                .name(saved.getName())
+                                .email(staffEmail)
+                                .phone(saved.getPhone() != null ? saved.getPhone() : "+91 98000 00000")
+                                .licenseNumber("DL-" + (saved.getId() != null ? "IND" + (1000 + saved.getId()) : "0420110056789"))
+                                .licenseExpiryDate(java.time.LocalDate.now().plusYears(5))
+                                .licenseCategory("COMMERCIAL_HEAVY")
+                                .experienceYears(5)
+                                .joiningDate(java.time.LocalDate.now())
+                                .verificationStatus("VERIFIED")
+                                .status("ACTIVE")
+                                .emergencyContact(saved.getPhone())
+                                .address("Campus Staff Quarters")
+                                .build());
+                    }
+                } catch (Exception ignored) {
+                }
+            }
         }
 
         return StaffResponse.fromEntity(saved);
@@ -98,15 +123,19 @@ public class StaffService {
         staffRepository.delete(staff);
     }
 
-    private Role resolveRole(StaffRequest r) {
+    public Role resolveRole(StaffRequest r) {
+        if (r == null) return Role.STAFF;
         String roleStr = (r.getRole() != null) ? r.getRole().trim().toUpperCase() : "";
         String desigStr = (r.getDesignation() != null) ? r.getDesignation().trim().toUpperCase() : "";
         String typeStr = (r.getStaffType() != null) ? r.getStaffType().trim().toUpperCase() : "";
 
-        if (roleStr.equals("PRINCIPAL") || roleStr.contains("PRINCIPAL") || desigStr.contains("PRINCIPAL") || typeStr.contains("PRINCIPAL")) {
+        if (roleStr.equals("DRIVER") || roleStr.contains("DRIVER") || desigStr.contains("DRIVER") || typeStr.contains("DRIVER") || desigStr.contains("CONDUCTOR")) {
+            return Role.DRIVER;
+        }
+        if (roleStr.equals("PRINCIPAL") || roleStr.contains("PRINCIPAL") || desigStr.contains("PRINCIPAL") || typeStr.contains("PRINCIPAL") || desigStr.contains("HEADMASTER")) {
             return Role.PRINCIPAL;
         }
-        if (roleStr.equals("ACCOUNTANT") || roleStr.contains("ACCOUNT") || desigStr.contains("ACCOUNT") || typeStr.contains("ACCOUNT")) {
+        if (roleStr.equals("ACCOUNTANT") || roleStr.contains("ACCOUNT") || desigStr.contains("ACCOUNT") || typeStr.contains("ACCOUNT") || desigStr.contains("CASHIER")) {
             return Role.ACCOUNTANT;
         }
         if (roleStr.equals("LIBRARIAN") || roleStr.contains("LIBRAR") || desigStr.contains("LIBRAR") || typeStr.contains("LIBRAR")) {

@@ -24,6 +24,11 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         try {
+            // Update check constraint to support all enum roles including DRIVER
+            jdbcTemplate.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check");
+            jdbcTemplate.execute("ALTER TABLE users ADD CONSTRAINT users_role_check " +
+                    "CHECK (role IN ('MASTER_ADMIN', 'ADMIN', 'SUPER_ADMIN', 'PRINCIPAL', 'TEACHER', 'STUDENT', 'PARENT', 'STAFF', 'ACCOUNTANT', 'LIBRARIAN', 'DRIVER'))");
+
             jdbcTemplate.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS department_id BIGINT");
             jdbcTemplate.execute("ALTER TABLE teachers ADD COLUMN IF NOT EXISTS designation_id BIGINT");
             jdbcTemplate.execute("ALTER TABLE school_designations ADD COLUMN IF NOT EXISTS department_id BIGINT");
@@ -42,16 +47,14 @@ public class DataInitializer implements CommandLineRunner {
         } catch (Exception ignored) {
         }
 
-        // Purge any accidental teacher record with the admin email to prevent role
-        // conflicts
+        // Purge any accidental teacher record with the admin email to prevent role conflicts
         try {
             teacherRepository.findByEmailIgnoreCase("admin@school.com").ifPresent(teacherRepository::delete);
             jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
         } catch (Exception ignored) {
         }
 
-        // Ensure default Super Admin account exists and its role/userType is ADMIN (not
-        // TEACHER)
+        // Ensure default Super Admin account exists so admin can access the Admin Panel
         Optional<UserEntity> existingAdmin = userRepository.findByEmailIgnoreCase("admin@school.com");
         if (existingAdmin.isPresent()) {
             UserEntity admin = existingAdmin.get();
@@ -72,7 +75,7 @@ public class DataInitializer implements CommandLineRunner {
         System.out.println("========================================");
         System.out.println("  SYSTEM INITIALIZED:");
         System.out.println("  Super Admin : admin@school.com / admin123 (Role: ADMIN)");
-        System.out.println("  (All staff, teachers, students and school records are managed via Dashboard)");
+        System.out.println("  (All staff, teachers, drivers, and students are created dynamically via Admin Panel)");
         System.out.println("========================================");
     }
 }
