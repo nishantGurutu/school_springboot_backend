@@ -21,8 +21,14 @@ public class TripDtos {
         private String shift; // MORNING, EVENING
         private Double startLatitude;
         private Double startLongitude;
+        private String startLocationName;
         private Boolean preTripCheckPassed;
         private String preTripNotes;
+        private Boolean chkBrakes;
+        private Boolean chkLights;
+        private Boolean chkTires;
+        private Boolean chkEmergencyKit;
+        private Boolean chkGpsActive;
     }
 
     @Getter
@@ -122,6 +128,16 @@ public class TripDtos {
         private String nextStopName;
         private Integer nextStopEtaMinutes;
         private Integer incidentCount;
+        private Double startLatitude;
+        private Double startLongitude;
+        private String startLocationName;
+        private Boolean preTripCheckPassed;
+        private String preTripNotes;
+        private Boolean chkBrakes;
+        private Boolean chkLights;
+        private Boolean chkTires;
+        private Boolean chkEmergencyKit;
+        private Boolean chkGpsActive;
     }
 
     @Getter
@@ -149,6 +165,17 @@ public class TripDtos {
         private String tripStatus; // NONE, SCHEDULED, IN_PROGRESS, COMPLETED
         private RouteDto route;
         private TripSummaryDto activeTrip;
+        private Boolean todayChecklistCompleted;
+        private String todayChecklistNotes;
+        private Double todayStartLatitude;
+        private Double todayStartLongitude;
+        private String todayStartLocationName;
+        private LocalDateTime todayActualStartTime;
+        private Boolean todayChkBrakes;
+        private Boolean todayChkLights;
+        private Boolean todayChkTires;
+        private Boolean todayChkEmergencyKit;
+        private Boolean todayChkGpsActive;
     }
 
     @Getter

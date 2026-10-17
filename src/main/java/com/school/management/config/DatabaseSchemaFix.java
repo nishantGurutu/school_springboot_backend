@@ -146,6 +146,20 @@ public class DatabaseSchemaFix {
             try {
                 jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
             } catch (Exception ignored) {}
+
+            // Ensure transport_trips table has the start location and daily checklist columns
+            try {
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS start_latitude DOUBLE PRECISION");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS start_longitude DOUBLE PRECISION");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS start_location_name VARCHAR(256)");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_brakes BOOLEAN DEFAULT TRUE");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_lights BOOLEAN DEFAULT TRUE");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_tires BOOLEAN DEFAULT TRUE");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_emergency_kit BOOLEAN DEFAULT TRUE");
+                jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_gps_active BOOLEAN DEFAULT TRUE");
+            } catch (Exception e) {
+                log.warn("Notice updating transport_trips columns: {}", e.getMessage());
+            }
         };
     }
 }

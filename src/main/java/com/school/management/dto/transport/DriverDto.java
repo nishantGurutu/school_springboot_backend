@@ -32,4 +32,19 @@ public class DriverDto {
     private Long assignedRouteId;
     private String assignedRouteName;
     private String dutyStatus; // OFF_DUTY, SCHEDULED, IN_TRIP
+
+    // Daily Operations & Safety Checklist Details
+    private Long todayTripId;
+    private String todayTripStatus; // NONE, SCHEDULED, IN_PROGRESS, COMPLETED
+    private java.time.LocalDateTime todayTripStartTime;
+    private Double todayStartLatitude;
+    private Double todayStartLongitude;
+    private String todayStartLocationName;
+    private Boolean todayPreTripCheckPassed;
+    private String todayPreTripNotes;
+    private Boolean todayChkBrakes;
+    private Boolean todayChkLights;
+    private Boolean todayChkTires;
+    private Boolean todayChkEmergencyKit;
+    private Boolean todayChkGpsActive;
 }

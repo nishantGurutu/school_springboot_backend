@@ -20,6 +20,7 @@ public interface TransportService {
     // Driver Management
     List<DriverDto> getAllDrivers(String schoolId);
     DriverDto getDriverById(Long id, String schoolId);
+    DriverDailyDetailsDto getDriverDailyDetails(Long id, String schoolId);
     DriverDto createDriver(DriverDto dto, String schoolId);
     DriverDto updateDriver(Long id, DriverDto dto, String schoolId);
     void deleteDriver(Long id, String schoolId);

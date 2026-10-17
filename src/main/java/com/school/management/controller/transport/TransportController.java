@@ -93,6 +93,13 @@ public class TransportController {
         return ResponseEntity.ok(transportService.getDriverById(id, schoolId));
     }
 
+    @GetMapping("/drivers/{id}/daily-details")
+    public ResponseEntity<DriverDailyDetailsDto> getDriverDailyDetails(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.ok(transportService.getDriverDailyDetails(id, schoolId));
+    }
+
     @PostMapping("/drivers")
     public ResponseEntity<DriverDto> createDriver(
             @RequestBody DriverDto dto,

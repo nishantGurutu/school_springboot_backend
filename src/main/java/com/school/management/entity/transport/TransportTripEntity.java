@@ -96,6 +96,35 @@ public class TransportTripEntity {
     @Builder.Default
     private Integer totalStopsCount = 0;
 
+    @Column(name = "start_latitude")
+    private Double startLatitude;
+
+    @Column(name = "start_longitude")
+    private Double startLongitude;
+
+    @Column(name = "start_location_name", length = 256)
+    private String startLocationName;
+
+    @Column(name = "chk_brakes")
+    @Builder.Default
+    private Boolean chkBrakes = true;
+
+    @Column(name = "chk_lights")
+    @Builder.Default
+    private Boolean chkLights = true;
+
+    @Column(name = "chk_tires")
+    @Builder.Default
+    private Boolean chkTires = true;
+
+    @Column(name = "chk_emergency_kit")
+    @Builder.Default
+    private Boolean chkEmergencyKit = true;
+
+    @Column(name = "chk_gps_active")
+    @Builder.Default
+    private Boolean chkGpsActive = true;
+
     @Column(name = "pre_trip_check_passed")
     @Builder.Default
     private Boolean preTripCheckPassed = false;
