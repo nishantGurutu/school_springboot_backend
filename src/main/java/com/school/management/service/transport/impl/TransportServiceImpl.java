@@ -32,6 +32,10 @@ public class TransportServiceImpl implements TransportService {
 
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TransportServiceImpl.class);
 
+    // Latest telemetry is transient. No GPS-history writes during an active trip.
+    private record LivePosition(String driverEmail, TripDtos.GpsPointDto point, LocalDateTime receivedAt) {}
+    private final java.util.concurrent.ConcurrentMap<Long, LivePosition> livePositions = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final BusRepository busRepository;
     private final DriverProfileRepository driverRepository;
     private final TransportRouteRepository routeRepository;
@@ -1177,7 +1181,7 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public TripDtos.TripSummaryDto startTrip(String driverEmail, TripDtos.StartTripRequest request) {
-        DriverProfileEntity driver = resolveDriver(driverEmail);
+        DriverProfileEntity driver = requireTrackingDriver(driverEmail);
 
         // Idempotency: check if driver already has an in-progress trip
         Optional<TransportTripEntity> existingActive = tripRepository.findFirstByDriverIdAndStatus(driver.getId(), "IN_PROGRESS");
@@ -1194,31 +1198,17 @@ public class TransportServiceImpl implements TransportService {
                     .orElse(null);
         }
         if (assignment == null) {
-            List<TransportRouteEntity> routes = routeRepository.findBySchoolId(driver.getSchoolId());
-            if (routes.isEmpty()) routes = routeRepository.findBySchoolId(DEFAULT_SCHOOL_ID);
-            if (routes.isEmpty()) routes = routeRepository.findAll();
-
-            List<BusEntity> buses = busRepository.findBySchoolId(driver.getSchoolId());
-            if (buses.isEmpty()) buses = busRepository.findBySchoolId(DEFAULT_SCHOOL_ID);
-            if (buses.isEmpty()) buses = busRepository.findAll();
-
-            Long rId = (!routes.isEmpty()) ? routes.get(0).getId() : 1L;
-            Long bId = (!buses.isEmpty()) ? buses.get(0).getId() : 1L;
-            BusAssignmentEntity autoAssignment = BusAssignmentEntity.builder()
-                    .schoolId(driver.getSchoolId() != null ? driver.getSchoolId() : DEFAULT_SCHOOL_ID)
-                    .driverId(driver.getId())
-                    .routeId(rId)
-                    .busId(bId)
-                    .shift(request.getShift() != null ? request.getShift() : "MORNING")
-                    .status("ACTIVE")
-                    .effectiveStartDate(LocalDate.now())
-                    .notes("Primary daily route assignment")
-                    .build();
-            assignment = assignmentRepository.save(autoAssignment);
+            throw new IllegalStateException("No active trip duty is assigned to this driver");
         }
-
-        Long routeId = request.getRouteId() != null ? request.getRouteId() : assignment.getRouteId();
-        Long busId = request.getBusId() != null ? request.getBusId() : assignment.getBusId();
+        if (!Objects.equals(assignment.getDriverId(), driver.getId()) || !"ACTIVE".equals(assignment.getStatus())) {
+            throw new UnauthorizedException("Only the assigned driver can start this trip");
+        }
+        if ((request.getRouteId() != null && !Objects.equals(request.getRouteId(), assignment.getRouteId()))
+                || (request.getBusId() != null && !Objects.equals(request.getBusId(), assignment.getBusId()))) {
+            throw new UnauthorizedException("Trip bus and route must match the driver's assigned duty");
+        }
+        Long routeId = assignment.getRouteId();
+        Long busId = assignment.getBusId();
 
         List<RouteStopEntity> stops = stopRepository.findByRouteIdOrderByStopOrderAsc(routeId);
         Long firstStopId = stops.isEmpty() ? null : stops.get(0).getId();
@@ -1290,87 +1280,48 @@ public class TransportServiceImpl implements TransportService {
         return mapToTripSummaryDto(saved);
     }
 
+    private DriverProfileEntity requireTrackingDriver(String email) {
+        if (email == null || email.isBlank()) throw new UnauthorizedException("Driver authentication required");
+        return driverRepository.findByEmailIgnoreCase(email.trim())
+                .orElseThrow(() -> new UnauthorizedException("A registered driver is required"));
+    }
+
+    private void validateGpsPoint(TripDtos.GpsPointDto point) {
+        if (point == null || point.getLatitude() == null || point.getLongitude() == null
+                || !Double.isFinite(point.getLatitude()) || !Double.isFinite(point.getLongitude())
+                || Math.abs(point.getLatitude()) > 90 || Math.abs(point.getLongitude()) > 180
+                || point.getRecordedAt() == null
+                || (point.getSpeedKmh() != null && (!Double.isFinite(point.getSpeedKmh()) || point.getSpeedKmh() < 0))
+                || (point.getAccuracyMeters() != null && (!Double.isFinite(point.getAccuracyMeters()) || point.getAccuracyMeters() < 0))) {
+            throw new IllegalArgumentException("Invalid GPS point");
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void publishLiveLocation(Long tripId, String driverEmail, TripDtos.GpsPointDto point) {
+        validateGpsPoint(point);
+        LivePosition cached = livePositions.get(tripId);
+        if (cached == null || Duration.between(cached.receivedAt(), LocalDateTime.now()).toMinutes() >= 5) {
+            DriverProfileEntity driver = requireTrackingDriver(driverEmail);
+            TransportTripEntity trip = tripRepository.findById(tripId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
+            if (!Objects.equals(driver.getId(), trip.getDriverId()) || !"IN_PROGRESS".equals(trip.getStatus())) {
+                throw new UnauthorizedException("Only the active trip driver can publish location");
+            }
+        } else if (!cached.driverEmail().equalsIgnoreCase(driverEmail)) {
+            throw new UnauthorizedException("Trip driver mismatch");
+        }
+        livePositions.compute(tripId, (id, previous) ->
+                previous != null && point.getRecordedAt().isBefore(previous.point().getRecordedAt())
+                        ? previous : new LivePosition(driverEmail, point, LocalDateTime.now()));
+        // Evict abandoned telemetry; persistent history remains in the driver's SQLite store.
+        livePositions.entrySet().removeIf(e -> Duration.between(e.getValue().receivedAt(), LocalDateTime.now()).toHours() >= 12);
+    }
+
     @Override
     public int ingestGpsBatch(Long tripId, String driverEmail, TripDtos.BatchGpsRequest request) {
-        if (request.getPoints() == null || request.getPoints().isEmpty()) {
-            return 0;
-        }
-
-        TransportTripEntity trip = tripRepository.findById(tripId)
-                .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
-
-        if (!"IN_PROGRESS".equalsIgnoreCase(trip.getStatus())) {
-            throw new IllegalStateException("Cannot upload GPS points for trip with status: " + trip.getStatus());
-        }
-
-        TransportRouteEntity route = routeRepository.findById(trip.getRouteId()).orElse(null);
-        int speedLimit = route != null && route.getSpeedLimitKmh() != null ? route.getSpeedLimitKmh() : 50;
-
-        List<BusLocationHistoryEntity> historyBatch = new ArrayList<>();
-        double accumulatedDistance = 0.0;
-        Double prevLat = trip.getLastLatitude();
-        Double prevLon = trip.getLastLongitude();
-
-        TripDtos.GpsPointDto latestPoint = null;
-
-        for (TripDtos.GpsPointDto p : request.getPoints()) {
-            if (p.getLatitude() == null || p.getLongitude() == null) continue;
-
-            latestPoint = p;
-
-            if (prevLat != null && prevLon != null) {
-                accumulatedDistance += calculateDistanceKm(prevLat, prevLon, p.getLatitude(), p.getLongitude());
-            }
-            prevLat = p.getLatitude();
-            prevLon = p.getLongitude();
-
-            historyBatch.add(BusLocationHistoryEntity.builder()
-                    .schoolId(trip.getSchoolId())
-                    .tripId(tripId)
-                    .busId(trip.getBusId())
-                    .driverId(trip.getDriverId())
-                    .latitude(p.getLatitude())
-                    .longitude(p.getLongitude())
-                    .speedKmh(p.getSpeedKmh() != null ? p.getSpeedKmh() : 0.0)
-                    .heading(p.getHeading())
-                    .accuracyMeters(p.getAccuracyMeters() != null ? p.getAccuracyMeters() : 5.0)
-                    .recordedAt(p.getRecordedAt() != null ? p.getRecordedAt() : LocalDateTime.now())
-                    .serverReceivedAt(LocalDateTime.now())
-                    .build());
-
-            // Automated rule 1: Overspeed detection
-            if (p.getSpeedKmh() != null && p.getSpeedKmh() > (speedLimit + 5)) {
-                createOverspeedAlert(trip, p.getSpeedKmh(), speedLimit);
-            }
-        }
-
-        if (!historyBatch.isEmpty()) {
-            locationHistoryRepository.saveAll(historyBatch);
-        }
-
-        if (latestPoint != null) {
-            trip.setLastLatitude(latestPoint.getLatitude());
-            trip.setLastLongitude(latestPoint.getLongitude());
-            trip.setCurrentSpeedKmh(latestPoint.getSpeedKmh() != null ? latestPoint.getSpeedKmh() : 0.0);
-            trip.setLastLocationTime(LocalDateTime.now());
-            trip.setTotalDistanceKm(trip.getTotalDistanceKm() + accumulatedDistance);
-
-            // Automated rule 2: Geofence stop proximity check
-            checkStopGeofences(trip, latestPoint.getLatitude(), latestPoint.getLongitude());
-
-            tripRepository.save(trip);
-
-            // Update bus live coordinates
-            busRepository.findById(trip.getBusId()).ifPresent(b -> {
-                b.setLastLatitude(trip.getLastLatitude());
-                b.setLastLongitude(trip.getLastLongitude());
-                b.setCurrentSpeed(trip.getCurrentSpeedKmh());
-                b.setLastGpsUpdate(LocalDateTime.now());
-                busRepository.save(b);
-            });
-        }
-
-        return historyBatch.size();
+        throw new IllegalStateException("GPS history is accepted only with trip completion. Use /locations/live for transient telemetry.");
     }
 
     private void checkStopGeofences(TransportTripEntity trip, double currentLat, double currentLon) {
@@ -1532,26 +1483,59 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public TripDtos.TripSummaryDto endTrip(Long tripId, String driverEmail, TripDtos.EndTripRequest request) {
-        TransportTripEntity trip = tripRepository.findById(tripId)
+        DriverProfileEntity driver = requireTrackingDriver(driverEmail);
+        TransportTripEntity trip = tripRepository.findForCompletion(tripId)
                 .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
-
+        if (!Objects.equals(driver.getId(), trip.getDriverId())) {
+            throw new UnauthorizedException("Only this trip's driver can complete it");
+        }
+        // Lock + terminal state make retries safe after a lost response.
+        if ("COMPLETED".equals(trip.getStatus())) return mapToTripSummaryDto(trip);
+        if (!"IN_PROGRESS".equals(trip.getStatus())) throw new IllegalStateException("Trip is not active");
+        List<TripDtos.GpsPointDto> points = request.getPoints() == null ? List.of() : request.getPoints();
+        if (points.size() > 10000) throw new IllegalArgumentException("Trip GPS batch exceeds 10000 points");
+        points.forEach(this::validateGpsPoint);
+        List<TripDtos.GpsPointDto> ordered = points.stream()
+                .sorted(Comparator.comparing(TripDtos.GpsPointDto::getRecordedAt)).toList();
+        List<BusLocationHistoryEntity> history = new ArrayList<>(ordered.size());
+        LocalDateTime previousTime = null;
+        for (TripDtos.GpsPointDto point : ordered) {
+            if (point.getRecordedAt().equals(previousTime)) continue;
+            if (trip.getActualStartTime() != null && point.getRecordedAt().isBefore(trip.getActualStartTime().atZone(java.time.ZoneId.systemDefault()).withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime().minusMinutes(5))) {
+                throw new IllegalArgumentException("GPS point predates this trip");
+            }
+            if (point.getRecordedAt().isAfter(LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(5))) {
+                throw new IllegalArgumentException("GPS timestamp is in the future");
+            }
+            history.add(BusLocationHistoryEntity.builder()
+                    .schoolId(trip.getSchoolId()).tripId(tripId).busId(trip.getBusId()).driverId(trip.getDriverId())
+                    .latitude(point.getLatitude()).longitude(point.getLongitude())
+                    .speedKmh(point.getSpeedKmh() == null ? 0.0 : point.getSpeedKmh())
+                    .heading(point.getHeading()).accuracyMeters(point.getAccuracyMeters())
+                    .recordedAt(point.getRecordedAt()).serverReceivedAt(LocalDateTime.now()).build());
+            previousTime = point.getRecordedAt();
+        }
+        if (!history.isEmpty()) {
+            locationHistoryRepository.saveAll(history);
+            TripDtos.GpsPointDto last = ordered.get(ordered.size() - 1);
+            trip.setLastLatitude(last.getLatitude()); trip.setLastLongitude(last.getLongitude());
+            trip.setLastLocationTime(last.getRecordedAt());
+        }
         trip.setStatus("COMPLETED");
         trip.setActualEndTime(LocalDateTime.now());
         trip.setCurrentSpeedKmh(0.0);
-        if (request.getTotalDistanceKm() != null && request.getTotalDistanceKm() > 0) {
+        if (request.getTotalDistanceKm() != null && Double.isFinite(request.getTotalDistanceKm()) && request.getTotalDistanceKm() >= 0) {
             trip.setTotalDistanceKm(request.getTotalDistanceKm());
         }
-        if (request.getNotes() != null) {
-            trip.setEndNotes(request.getNotes());
-        }
-
+        trip.setEndNotes(request.getNotes());
         TransportTripEntity saved = tripRepository.save(trip);
-
-        busRepository.findById(trip.getBusId()).ifPresent(b -> {
-            b.setCurrentSpeed(0.0);
-            busRepository.save(b);
+        busRepository.findById(trip.getBusId()).ifPresent(bus -> {
+            bus.setCurrentSpeed(0.0);
+            bus.setLastLatitude(trip.getLastLatitude()); bus.setLastLongitude(trip.getLastLongitude());
+            bus.setLastGpsUpdate(trip.getLastLocationTime());
+            busRepository.save(bus);
         });
-
+        livePositions.remove(tripId);
         logAudit(trip.getSchoolId(), "TRIP_COMPLETED", "TRIP", saved.getId(), "Driver completed trip id: " + saved.getId());
         return mapToTripSummaryDto(saved);
     }
@@ -1563,8 +1547,6 @@ public class TransportServiceImpl implements TransportService {
     @Override
     public List<TripDtos.LiveTrackingBusDto> getLiveTracking(String schoolId) {
         String sId = resolveSchool(schoolId);
-        seedInitialTransportDataIfEmpty(sId);
-
         List<BusEntity> buses = busRepository.findBySchoolId(sId);
         List<TripDtos.LiveTrackingBusDto> result = new ArrayList<>();
 
@@ -1597,8 +1579,9 @@ public class TransportServiceImpl implements TransportService {
                 }
             }
 
-            LocalDateTime lastGps = bus.getLastGpsUpdate() != null ? bus.getLastGpsUpdate() : LocalDateTime.now().minusMinutes(1);
-            boolean isOnline = Duration.between(lastGps, LocalDateTime.now()).toMinutes() < 4;
+            LivePosition live = tripId == null ? null : livePositions.get(tripId);
+            LocalDateTime lastGps = live != null ? live.receivedAt() : bus.getLastGpsUpdate();
+            boolean isOnline = activeTrip.isPresent() && lastGps != null && Duration.between(lastGps, LocalDateTime.now()).toSeconds() < 120;
 
             String currentStop = "Depot";
             String nextStop = "En Route";
@@ -1631,10 +1614,10 @@ public class TransportServiceImpl implements TransportService {
                     .routeId(routeId)
                     .routeName(routeName)
                     .shift(as != null ? as.getShift() : "MORNING")
-                    .currentLatitude(bus.getLastLatitude() != null ? bus.getLastLatitude() : 25.6020)
-                    .currentLongitude(bus.getLastLongitude() != null ? bus.getLastLongitude() : 85.1420)
-                    .currentSpeedKmh(bus.getCurrentSpeed() != null ? bus.getCurrentSpeed() : 28.0)
-                    .heading(45.0)
+                    .currentLatitude(live != null ? live.point().getLatitude() : bus.getLastLatitude())
+                    .currentLongitude(live != null ? live.point().getLongitude() : bus.getLastLongitude())
+                    .currentSpeedKmh(live != null ? live.point().getSpeedKmh() : 0.0)
+                    .heading(live != null ? live.point().getHeading() : 0.0)
                     .lastGpsUpdate(lastGps)
                     .isGpsOnline(isOnline)
                     .currentStopName(currentStop)
@@ -1903,7 +1886,7 @@ public class TransportServiceImpl implements TransportService {
         RouteStopEntity stop = assignment.getPickupStopId() != null ? stopRepository.findById(assignment.getPickupStopId()).orElse(null) : null;
 
         // Find active trip for this route
-        Optional<TransportTripEntity> activeTrip = tripRepository.findFirstByBusIdAndStatus(assignment.getRouteId(), "IN_PROGRESS");
+        Optional<TransportTripEntity> activeTrip = tripRepository.findFirstByRouteIdAndSchoolIdAndStatus(assignment.getRouteId(), assignment.getSchoolId(), "IN_PROGRESS");
         if (activeTrip.isEmpty()) {
             List<BusAssignmentEntity> busAssignments = assignmentRepository.findByRouteIdAndStatus(assignment.getRouteId(), "ACTIVE");
             if (!busAssignments.isEmpty()) {
@@ -1913,21 +1896,22 @@ public class TransportServiceImpl implements TransportService {
 
         BusEntity bus = null;
         DriverProfileEntity driver = null;
-        Double lat = 25.6020;
-        Double lon = 85.1420;
+        Double lat = null;
+        Double lon = null;
         Double speed = 0.0;
         int eta = 8;
         String tripStatus = "SCHEDULED";
-        LocalDateTime lastGps = LocalDateTime.now();
+        LocalDateTime lastGps = null;
 
         if (activeTrip.isPresent()) {
             TransportTripEntity t = activeTrip.get();
             tripStatus = t.getStatus();
-            lat = t.getLastLatitude();
-            lon = t.getLastLongitude();
-            speed = t.getCurrentSpeedKmh();
+            LivePosition live = livePositions.get(t.getId());
+            lat = live != null ? live.point().getLatitude() : t.getLastLatitude();
+            lon = live != null ? live.point().getLongitude() : t.getLastLongitude();
+            speed = live != null ? live.point().getSpeedKmh() : 0.0;
             eta = t.getNextStopEtaMinutes() != null ? t.getNextStopEtaMinutes() : 8;
-            lastGps = t.getLastLocationTime();
+            lastGps = live != null ? live.receivedAt() : t.getLastLocationTime();
             bus = busRepository.findById(t.getBusId()).orElse(null);
             driver = driverRepository.findById(t.getDriverId()).orElse(null);
         } else {

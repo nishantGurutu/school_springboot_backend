@@ -275,12 +275,26 @@ public class TransportController {
         return ResponseEntity.ok(transportService.getDriverDuty(driverEmail));
     }
 
+    private String trackingDriverEmail(UserDetails userDetails) {
+        if (userDetails == null) throw new com.school.management.exceptions.UnauthorizedException("Driver authentication required");
+        return userDetails.getUsername();
+    }
+
+    @PostMapping("/trips/{tripId}/locations/live")
+    public ResponseEntity<Map<String, Object>> publishLiveLocation(
+            @PathVariable Long tripId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestBody TripDtos.GpsPointDto point) {
+        transportService.publishLiveLocation(tripId, trackingDriverEmail(userDetails), point);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
     @PostMapping("/trips/start")
     public ResponseEntity<TripDtos.TripSummaryDto> startTrip(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.StartTripRequest request) {
-        String driverEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String driverEmail = trackingDriverEmail(userDetails);
         return ResponseEntity.ok(transportService.startTrip(driverEmail, request));
     }
 
@@ -290,7 +304,7 @@ public class TransportController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.BatchGpsRequest request) {
-        String driverEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String driverEmail = trackingDriverEmail(userDetails);
         int saved = transportService.ingestGpsBatch(tripId, driverEmail, request);
         return ResponseEntity.ok(Map.of("success", true, "pointsProcessed", saved));
     }
@@ -322,7 +336,7 @@ public class TransportController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.EndTripRequest request) {
-        String driverEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String driverEmail = trackingDriverEmail(userDetails);
         return ResponseEntity.ok(transportService.endTrip(tripId, driverEmail, request));
     }
 

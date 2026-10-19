@@ -90,6 +90,8 @@ public class TripDtos {
     @AllArgsConstructor
     @Builder
     public static class EndTripRequest {
+        @Builder.Default
+        private List<GpsPointDto> points = new ArrayList<>();
         private Double endLatitude;
         private Double endLongitude;
         private Double totalDistanceKm;

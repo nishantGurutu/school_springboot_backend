@@ -53,6 +53,7 @@ public interface TransportService {
     // Driver App Core Operations
     TripDtos.DriverDutyDto getDriverDuty(String driverEmail);
     TripDtos.TripSummaryDto startTrip(String driverEmail, TripDtos.StartTripRequest request);
+    void publishLiveLocation(Long tripId, String driverEmail, TripDtos.GpsPointDto point);
     int ingestGpsBatch(Long tripId, String driverEmail, TripDtos.BatchGpsRequest request);
     TripDtos.StopEventDto recordStopEvent(Long tripId, Long stopId, String driverEmail, TripDtos.StopEventRequest request);
     TripDtos.TripIncidentDto reportIncident(Long tripId, String driverEmail, TripDtos.TripIncidentRequest request);
