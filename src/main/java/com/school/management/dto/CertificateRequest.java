@@ -9,6 +9,8 @@ public class CertificateRequest {
     @NotBlank(message = "Name is required")
     private String name;
 
+    private String admissionNo;
+
     private String rollNo;
 
     private String className;

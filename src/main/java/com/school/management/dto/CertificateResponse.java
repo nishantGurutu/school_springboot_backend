@@ -10,6 +10,8 @@ public class CertificateResponse {
 
     private Long id;
     private String name;
+    private String admissionNo;
+
     private String rollNo;
     private String className;
     private String certificateName;
@@ -23,6 +25,7 @@ public class CertificateResponse {
         return CertificateResponse.builder()
                 .id(entity.getId())
                 .name(entity.getName())
+                .admissionNo(entity.getAdmissionNo())
                 .rollNo(entity.getRollNo())
                 .className(entity.getClassName())
                 .certificateName(entity.getCertificateName())

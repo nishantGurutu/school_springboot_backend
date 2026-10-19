@@ -33,6 +33,10 @@ public class ExamResultEntity {
 
     private String exam;
 
+    private Long scheduleId;
+
+    private Double maxMarks;
+
     private Integer total;
 
     private Integer percent;

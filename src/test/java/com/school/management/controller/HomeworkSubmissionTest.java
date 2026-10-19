@@ -19,6 +19,8 @@ class HomeworkSubmissionTest {
     @Mock StudentRepository studentRepository;
     @Mock HomeworkRepository homeworkRepository;
     @Mock HomeworkSubmissionRepository homeworkSubmissionRepository;
+    @org.mockito.Mock com.school.management.service.PortalNotificationService portalNotifications;
+    @org.mockito.Mock com.school.management.repository.UserRepository portalUsers;
     @InjectMocks MobileAppController controller;
 
     @Test void parentCannotSubmitForStudent() {
@@ -46,5 +48,13 @@ class HomeworkSubmissionTest {
         assertEquals(7L, saved.getValue().getStudentId());
         assertEquals(1L, saved.getValue().getHomeworkId());
         assertNotNull(saved.getValue().getSubmittedAt());
+    }
+    @Test void studentCannotOverwriteTeacherReviewedWork() {
+        when(securityUtil.getCurrentUser()).thenReturn(Optional.of(UserEntity.builder().role(Role.STUDENT).email("student@school.test").build()));
+        when(studentRepository.findByEmailIgnoreCase("student@school.test")).thenReturn(Optional.of(StudentEntity.builder().id(7L).className("10").section("A").build()));
+        when(homeworkRepository.findById(1L)).thenReturn(Optional.of(HomeworkEntity.builder().id(1L).className("10").section("A").build()));
+        when(homeworkSubmissionRepository.findByHomeworkIdAndStudentId(1L, 7L)).thenReturn(Optional.of(HomeworkSubmissionEntity.builder().homeworkId(1L).studentId(7L).status("GRADED").points(95).build()));
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> controller.submitStudentAssignment("hw_1", java.util.Map.of("submissionText", "replacement"))).getStatusCode().value());
+        verify(homeworkSubmissionRepository, never()).save(any());
     }
 }

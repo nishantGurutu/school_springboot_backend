@@ -47,22 +47,9 @@ public class DataInitializer implements CommandLineRunner {
         } catch (Exception ignored) {
         }
 
-        // Purge any accidental teacher record with the admin email to prevent role conflicts
-        try {
-            teacherRepository.findByEmailIgnoreCase("admin@school.com").ifPresent(teacherRepository::delete);
-            jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
-        } catch (Exception ignored) {
-        }
-
         // Ensure default Super Admin account exists so admin can access the Admin Panel
         Optional<UserEntity> existingAdmin = userRepository.findByEmailIgnoreCase("admin@school.com");
-        if (existingAdmin.isPresent()) {
-            UserEntity admin = existingAdmin.get();
-            admin.setName("Super Admin");
-            admin.setRole(Role.ADMIN);
-            admin.setEnabled(true);
-            userRepository.save(admin);
-        } else {
+        if (existingAdmin.isEmpty()) {
             userRepository.save(UserEntity.builder()
                     .email("admin@school.com")
                     .password(passwordEncoder.encode("admin123"))

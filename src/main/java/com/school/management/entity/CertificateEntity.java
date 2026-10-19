@@ -24,6 +24,8 @@ public class CertificateEntity {
     @Column(nullable = false)
     private String name;
 
+    private String admissionNo;
+
     private String rollNo;
 
     private String className;

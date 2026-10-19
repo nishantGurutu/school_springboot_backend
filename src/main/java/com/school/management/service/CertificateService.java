@@ -18,20 +18,25 @@ import java.util.List;
 public class CertificateService {
 
     private final CertificateRepository certificateRepository;
+    private final PortalAccessService access;
+    private final com.school.management.repository.StudentRepository students;
 
     @Transactional
     public CertificateResponse create(CertificateRequest request) {
-        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        access.requireManager();
+        var student = access.student(request.getAdmissionNo());
+        String name = student.getName();
         String certName = request.getCertificateName() != null ? request.getCertificateName().trim() : null;
-        if (certName != null && certificateRepository.existsByNameAndCertificateName(name, certName)) {
+        if (certName != null && certificateRepository.findAll().stream().anyMatch(c -> student.getAdmissionNo().equalsIgnoreCase(c.getAdmissionNo()) && certName.equalsIgnoreCase(c.getCertificateName()))) {
             throw new DuplicateResourceException(
                     "Certificate with name '" + name + "' and certificate name '" + certName + "' already exists");
         }
 
         CertificateEntity entity = CertificateEntity.builder()
                 .name(name)
-                .rollNo(request.getRollNo())
-                .className(request.getClassName())
+                .admissionNo(request.getAdmissionNo())
+                .rollNo(student.getRollNo())
+                .className(student.getClassName())
                 .certificateName(certName)
                 .bgImage(request.getBgImage())
                 .avatar(request.getAvatar())
@@ -45,6 +50,7 @@ public class CertificateService {
     @Transactional(readOnly = true)
     public List<CertificateResponse> getAll() {
         return certificateRepository.findAll().stream()
+                .filter(this::visible)
                 .map(CertificateResponse::fromEntity)
                 .toList();
     }
@@ -56,11 +62,14 @@ public class CertificateService {
 
     @Transactional
     public CertificateResponse update(Long id, CertificateRequest request) {
+        access.requireManager();
         CertificateEntity entity = findByIdOrThrow(id);
-        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        var student = access.student(request.getAdmissionNo());
+        String name = student.getName();
         entity.setName(name);
-        entity.setRollNo(request.getRollNo());
-        entity.setClassName(request.getClassName());
+        entity.setAdmissionNo(request.getAdmissionNo());
+        entity.setRollNo(student.getRollNo());
+        entity.setClassName(student.getClassName());
         entity.setCertificateName(request.getCertificateName());
         entity.setBgImage(request.getBgImage());
         entity.setAvatar(request.getAvatar());
@@ -72,13 +81,19 @@ public class CertificateService {
 
     @Transactional
     public void delete(Long id) {
+        access.requireManager();
         CertificateEntity entity = findByIdOrThrow(id);
         certificateRepository.delete(entity);
     }
 
     private CertificateEntity findByIdOrThrow(Long id) {
-        return certificateRepository.findById(id)
+        return certificateRepository.findById(id).filter(this::visible)
                 .orElseThrow(() -> new ResourceNotFoundException("Certificate not found with id: " + id));
+    }
+
+    private boolean visible(CertificateEntity c) {
+        if (access.manager()) return access.actor().getRole()!=com.school.management.domain.user.Role.TEACHER || (c.getAdmissionNo()!=null && students.findByAdmissionNoIgnoreCase(c.getAdmissionNo()).map(s -> access.teaches(s.getClassName(), s.getSection())).orElse(false));
+        return c.getAdmissionNo()!=null && access.children().stream().anyMatch(s -> c.getAdmissionNo().equalsIgnoreCase(s.getAdmissionNo()));
     }
 
     private String requireNonBlank(String value, String message) {

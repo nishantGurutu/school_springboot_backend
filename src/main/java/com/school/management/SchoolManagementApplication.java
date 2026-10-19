@@ -10,6 +10,7 @@ import java.util.TimeZone;
 public class SchoolManagementApplication {
 
 	@PostConstruct
+
 	public void init() {
 		TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"));
 	}

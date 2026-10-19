@@ -53,6 +53,8 @@ public class FeeCollectionEntity {
     @Column(length = 32)
     private String paymentType;
 
+    private String onlineReceipt;
+
     @Column(length = 255)
     private String note;
 

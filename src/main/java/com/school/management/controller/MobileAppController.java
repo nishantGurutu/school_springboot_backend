@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -28,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MobileAppController {
 
     private final SecurityUtil securityUtil;
+    private final com.school.management.service.PortalNotificationService portalNotifications;
+    private final UserRepository portalUsers;
     private final StudentRepository studentRepository;
     private final GuardianRepository guardianRepository;
     private final TeacherRepository teacherRepository;
@@ -55,6 +59,75 @@ public class MobileAppController {
     private final SubjectTopicRepository subjectTopicRepository;
     private final SchoolClassRepository schoolClassRepository;
     private final SectionRepository sectionRepository;
+
+    private UserEntity assignmentManager() {
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (!Set.of(Role.TEACHER, Role.ADMIN, Role.PRINCIPAL, Role.MASTER_ADMIN, Role.SUPER_ADMIN).contains(user.getRole()))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher access required");
+        return user;
+    }
+
+    private void requireAssignedClass(String className, String section) {
+        UserEntity user = assignmentManager();
+        if (user.getRole() != Role.TEACHER) return;
+        TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher profile not linked"));
+        boolean assigned = teacher.getAssignedClasses().stream().anyMatch(c ->
+                c.getName().equalsIgnoreCase(className) &&
+                (c.getSection() == null || c.getSection().isBlank() || c.getSection().equalsIgnoreCase(section)));
+        if (!assigned && teacher.getAssignedClass() != null) {
+            assigned = Arrays.stream(teacher.getAssignedClass().split(",")).anyMatch(c ->
+                    c.trim().equalsIgnoreCase(className) || c.trim().equalsIgnoreCase(className + " - " + section));
+        }
+        if (!assigned) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class/section is not assigned to this teacher");
+    }
+
+    private HomeworkEntity managedAssignment(String id) {
+        Long key;
+        try { key = Long.valueOf(id.replace("hw_", "")); }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid assignment ID"); }
+        HomeworkEntity hw = homeworkRepository.findById(key)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found"));
+        requireAssignedClass(hw.getClassName(), hw.getSection());
+        UserEntity user = assignmentManager();
+        if (user.getRole() == Role.TEACHER) {
+            TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow();
+            if (!Objects.equals(hw.getTeacherId(), teacher.getId()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Assignment belongs to another teacher");
+        }
+        return hw;
+    }
+
+    private boolean assignedTo(HomeworkEntity hw, StudentEntity student) {
+        if (hw.getTargetStudentId() != null) return hw.getTargetStudentId().equals(student.getId());
+        return hw.getClassName() != null && hw.getClassName().equalsIgnoreCase(student.getClassName()) &&
+                (hw.getSection() == null || hw.getSection().isBlank() || hw.getSection().equalsIgnoreCase(student.getSection()));
+    }
+
+    private StudentEntity assignmentStudent(String admissionNo) {
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (user.getRole() == Role.STUDENT) {
+            StudentEntity student = studentRepository.findByEmailIgnoreCase(user.getEmail())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student profile not linked"));
+            if (admissionNo != null && !admissionNo.isBlank() && !admissionNo.trim().equalsIgnoreCase(student.getAdmissionNo()))
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot view another student");
+            return student;
+        }
+        if (user.getRole() != Role.PARENT) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Student or parent access required");
+        Map<Long, StudentEntity> children = new LinkedHashMap<>();
+        studentRepository.findByGuardianEmailIgnoreCase(user.getEmail()).forEach(child -> children.put(child.getId(), child));
+        guardianRepository.findByEmailIgnoreCase(user.getEmail()).ifPresent(parent -> {
+            if (parent.getStudentAdmissionNo() != null)
+                Arrays.stream(parent.getStudentAdmissionNo().split(",")).forEach(admission ->
+                        studentRepository.findByAdmissionNoIgnoreCase(admission.trim()).ifPresent(child -> children.put(child.getId(), child)));
+        });
+        if (admissionNo == null || admissionNo.isBlank()) {
+            if (children.size() == 1) return children.values().iterator().next();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select a linked child");
+        }
+        return children.values().stream().filter(child -> admissionNo.trim().equalsIgnoreCase(child.getAdmissionNo())).findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Child is not linked to your account"));
+    }
 
     // ==========================================
     // 0. COMPOSITE HOME DASHBOARD ENDPOINT
@@ -99,23 +172,37 @@ public class MobileAppController {
                 if (!linked) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Child is not linked to your account");
             }
 
-            String studentName = student != null && student.getName() != null ? student.getName() : "Kauan Sousa";
-            String studentClass = student != null && student.getClassName() != null ? student.getClassName() : "10 - A English";
+            String studentName = student != null && student.getName() != null ? student.getName() : currentUser.getName();
+            String studentClass = student != null && student.getClassName() != null ? student.getClassName() : "";
             if (!studentClass.toLowerCase().startsWith("class")) {
                 studentClass = "Class : " + studentClass;
             }
-            String rollNo = student != null && student.getRollNo() != null ? student.getRollNo() : "31";
+            String rollNo = student != null && student.getRollNo() != null ? student.getRollNo() : "";
             String avatarUrl = student != null && student.getStudentPhoto() != null && !student.getStudentPhoto().isBlank()
                     ? student.getStudentPhoto()
-                    : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80";
+                    : "";
 
             Map<String, Object> profile = new HashMap<>();
             profile.put("name", studentName);
             profile.put("className", studentClass);
             profile.put("rollNo", rollNo);
-            profile.put("admissionNo", student != null ? student.getAdmissionNo() : "ADM-1001");
+            profile.put("admissionNo", student != null ? student.getAdmissionNo() : "");
             profile.put("avatarUrl", avatarUrl);
             profile.put("headerSubtitle", studentClass + " | Roll No : " + rollNo);
+            if (currentUser.getRole() == Role.TEACHER || currentUser.getRole() == Role.STAFF) {
+                profile.put("name", currentUser.getName());
+                profile.put("email", currentUser.getEmail());
+                profile.put("className", "");
+                profile.put("rollNo", "");
+                profile.put("admissionNo", "");
+                profile.put("avatarUrl", "");
+                profile.put("headerSubtitle", currentUser.getRole().name());
+                teacherRepository.findByEmailIgnoreCase(currentUser.getEmail()).ifPresent(teacher -> {
+                    profile.put("avatarUrl", Objects.toString(teacher.getAvatar(), ""));
+                    profile.put("headerSubtitle", Objects.toString(teacher.getSubject(), ""));
+                });
+            }
+
 
             // 1. Dynamic Banners from Database (Managed via Dashboard)
             List<Map<String, Object>> banners = new ArrayList<>();
@@ -149,9 +236,6 @@ public class MobileAppController {
                 } catch (Exception ex) {
                     log.warn("Error parsing student subject IDs: {}", ex.getMessage());
                 }
-            }
-            if (studentSubjects.isEmpty()) {
-                studentSubjects = subjectRepository.findAll();
             }
             for (int i = 0; i < studentSubjects.size(); i++) {
                 subjects.add(mapSubjectEntityToDashboardMap(studentSubjects.get(i), i));
@@ -231,7 +315,7 @@ public class MobileAppController {
             GuardianEntity guardian = guardianRepository.findByEmailIgnoreCase(parentEmail).orElse(null);
             String parentName = guardian != null && guardian.getName() != null ? guardian.getName() : currentUser.getName();
             if (parentName == null || parentName.isBlank()) {
-                parentName = "Amber Wayt";
+                parentName = "";
             }
             String parentAvatar = guardian != null && guardian.getPhoto() != null ? guardian.getPhoto() : "";
 
@@ -266,13 +350,13 @@ public class MobileAppController {
                     Map<String, Object> c = new HashMap<>();
                     c.put("id", String.valueOf(s.getId()));
                     c.put("name", s.getName());
-                    String cls = s.getClassName() != null ? s.getClassName() : "10 - A English";
+                    String cls = s.getClassName() != null ? s.getClassName() : "";
                     c.put("className", cls.startsWith("Class") ? cls : "Class - " + cls);
                     c.put("rollNo", s.getRollNo() != null ? s.getRollNo() : "");
                     c.put("admissionNo", s.getAdmissionNo());
                     c.put("avatarUrl", s.getStudentPhoto() != null && !s.getStudentPhoto().isBlank()
                             ? s.getStudentPhoto()
-                            : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80");
+                            : "");
                     children.add(c);
                 }
             }
@@ -474,8 +558,12 @@ public class MobileAppController {
     public ResponseEntity<List<Map<String, Object>>> getAttendance(
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String date,
-            @RequestParam(required = false) String className) {
+            @RequestParam(required = false) String className,
+            @RequestParam(required = false) String admissionNo) {
 
+        UserEntity viewer = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        StudentEntity student = (viewer.getRole() == Role.STUDENT || viewer.getRole() == Role.PARENT) ? assignmentStudent(admissionNo) : null;
+        List<Map<String,Object>> teacherClasses = viewer.getRole() == Role.TEACHER ? getTeacherClasses().getBody() : List.of();
         List<Map<String, Object>> result = new ArrayList<>();
 
         try {
@@ -505,6 +593,14 @@ public class MobileAppController {
             }
 
             for (AttendanceEntity entity : dbEntities) {
+                if (student != null && !Objects.toString(student.getAdmissionNo(), "").equalsIgnoreCase(entity.getAdmissionNo())) continue;
+                if (viewer.getRole() == Role.TEACHER) {
+                    if ("STUDENT".equalsIgnoreCase(entity.getAttendanceType())) {
+                        StudentEntity enrolled = entity.getAdmissionNo() == null ? null : studentRepository.findByAdmissionNoIgnoreCase(entity.getAdmissionNo()).orElse(null);
+                        if (enrolled == null || teacherClasses.stream().noneMatch(c -> Objects.toString(c.get("className"), "").equalsIgnoreCase(enrolled.getClassName()) &&
+                                (Objects.toString(c.get("section"), "").isBlank() || Objects.toString(c.get("section"), "").equalsIgnoreCase(enrolled.getSection())))) continue;
+                    } else if (!Objects.toString(viewer.getName(), "").equalsIgnoreCase(entity.getName())) continue;
+                }
                 Map<String, Object> rec = new HashMap<>();
                 rec.put("id", entity.getId());
                 rec.put("attendanceType", entity.getAttendanceType());
@@ -532,25 +628,15 @@ public class MobileAppController {
     @PostMapping("/attendance/mark")
     @Operation(summary = "Mark attendance directly for student or staff")
     public ResponseEntity<Map<String, Object>> markAttendance(@RequestBody Map<String, Object> req) {
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String date = req.getOrDefault("date", LocalDate.now().toString()).toString();
-        String name = req.getOrDefault("name", user != null ? user.getName() : "").toString();
-        String rawType = req.getOrDefault("attendanceType",
-                req.getOrDefault("role", req.getOrDefault("type", "STUDENT"))).toString();
-
-        String normalizedType = "STUDENT";
-        if (user != null && user.getRole() == Role.STUDENT) {
-            normalizedType = "STUDENT";
-        } else if (user != null && (user.getRole() == Role.STAFF || user.getRole() == Role.ACCOUNTANT || user.getRole() == Role.LIBRARIAN)) {
-            normalizedType = "EMPLOYEE";
-        } else if (user != null && user.getRole() == Role.TEACHER) {
-            normalizedType = "TEACHER";
-        } else if ("teacher".equalsIgnoreCase(rawType)) {
-            normalizedType = "TEACHER";
-        } else if ("staff".equalsIgnoreCase(rawType) || "employee".equalsIgnoreCase(rawType)) {
-            normalizedType = "EMPLOYEE";
-        }
-
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (user.getRole() == Role.PARENT) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Parents cannot mark attendance");
+        String date = Objects.toString(req.get("date"), LocalDate.now().toString());
+        String name = Objects.toString(req.get("name"), user.getName());
+        String rawType = Objects.toString(req.get("attendanceType"), Objects.toString(req.get("role"), "STUDENT"));
+        String normalizedType = user.getRole() == Role.TEACHER && !"STUDENT".equalsIgnoreCase(rawType) ? "TEACHER"
+                : Set.of(Role.STAFF, Role.ACCOUNTANT, Role.LIBRARIAN).contains(user.getRole()) ? "EMPLOYEE"
+                : "TEACHER".equalsIgnoreCase(rawType) ? "TEACHER" : "STUDENT";
+        if (user.getRole() == Role.STUDENT) normalizedType = "STUDENT";
         String status = req.getOrDefault("status", "present").toString().toLowerCase();
         String notes = req.getOrDefault("notes", req.getOrDefault("note", "")).toString();
         String className = req.getOrDefault("className", "").toString();
@@ -561,9 +647,19 @@ public class MobileAppController {
                 ? req.get("checkInTime").toString() : null;
         String checkOutTime = req.containsKey("checkOutTime") && req.get("checkOutTime") != null
                 ? req.get("checkOutTime").toString() : null;
-        String admissionNo = req.containsKey("admissionNo") && req.get("admissionNo") != null
-                ? req.get("admissionNo").toString().trim()
-                : (!rollNo.isEmpty() ? "ADM-" + rollNo : null);
+        String admissionNo = req.get("admissionNo") == null ? null : req.get("admissionNo").toString().trim();
+        if ("STUDENT".equals(normalizedType)) {
+            StudentEntity enrollment;
+            if (user.getRole() == Role.STUDENT) enrollment = studentRepository.findByEmailIgnoreCase(user.getEmail())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student profile not linked"));
+            else enrollment = studentRepository.findByAdmissionNoIgnoreCase(Objects.toString(admissionNo, ""))
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an enrolled student with admission number"));
+            if (user.getRole() == Role.TEACHER) requireAssignedClass(enrollment.getClassName(), enrollment.getSection());
+            admissionNo = enrollment.getAdmissionNo(); name = enrollment.getName(); rollNo = enrollment.getRollNo(); className = enrollment.getClassName();
+        } else if (!Set.of(Role.ADMIN, Role.MASTER_ADMIN, Role.SUPER_ADMIN, Role.PRINCIPAL).contains(user.getRole())) {
+            name = user.getName(); admissionNo = null;
+        }
+        if (!Set.of("present", "absent", "late", "holiday").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid attendance status");
         String avatar = req.containsKey("avatar") && req.get("avatar") != null ? req.get("avatar").toString() : null;
 
         AttendanceEntity entityToSave = AttendanceEntity.builder()
@@ -582,14 +678,19 @@ public class MobileAppController {
                 .checkOutTime(checkOutTime)
                 .build();
 
-        try {
-            entityToSave = attendanceRepository.save(entityToSave);
-        } catch (Exception e) {
-            log.error("Failed to save attendance record", e);
+        String identity = admissionNo;
+        String recordName = name;
+        AttendanceEntity previous = attendanceRepository.findByAttendanceTypeAndAttendanceDate(normalizedType, date).stream()
+                .filter(record -> identity != null ? identity.equalsIgnoreCase(record.getAdmissionNo()) : recordName.equalsIgnoreCase(record.getName())).findFirst().orElse(null);
+        if (previous != null) {
+            entityToSave.setId(previous.getId()); entityToSave.setCreatedAt(previous.getCreatedAt());
+            if (checkInTime == null) entityToSave.setCheckInTime(previous.getCheckInTime());
+            if (checkOutTime == null) entityToSave.setCheckOutTime(previous.getCheckOutTime());
         }
+        entityToSave = attendanceRepository.save(entityToSave);
 
         Map<String, Object> record = new HashMap<>();
-        record.put("id", entityToSave.getId() != null ? entityToSave.getId() : System.currentTimeMillis());
+        record.put("id", entityToSave.getId());
         record.put("attendanceType", normalizedType.toLowerCase());
         record.put("admissionNo", admissionNo);
         record.put("name", name);
@@ -709,47 +810,9 @@ public class MobileAppController {
     public ResponseEntity<List<Map<String, Object>>> getHomework(
             @RequestParam(required = false) String className) {
 
-        UserEntity homeworkUser = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
-        StudentEntity ownStudent = null;
-        if (homeworkUser.getRole() == Role.STUDENT) {
-            ownStudent = studentRepository.findByEmailIgnoreCase(homeworkUser.getEmail()).orElseThrow(
-                    () -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
-            className = ownStudent.getClassName();
-        }
-        List<HomeworkEntity> list;
-        if (className != null && !className.isBlank()) {
-            list = homeworkRepository.findByClassNameIgnoreCaseOrderByIdDesc(className);
-        } else {
-            list = homeworkRepository.findAllByOrderByIdDesc();
-        }
-
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (HomeworkEntity h : list) {
-            if (ownStudent != null && h.getSection() != null && !h.getSection().isBlank() && !h.getSection().equalsIgnoreCase(ownStudent.getSection())) continue;
-            UserEntity viewer = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
-            StudentEntity viewerStudent = studentRepository.findByEmailIgnoreCase(viewer.getEmail()).orElse(null);
-            String submissionStatus = viewerStudent != null && homeworkSubmissionRepository
-                    .findByHomeworkIdAndStudentId(h.getId(), viewerStudent.getId()).isPresent() ? "submitted" : "pending";
-            if ("pending".equals(submissionStatus) && h.getDueDate() != null) {
-                try {
-                    if (LocalDate.parse(h.getDueDate()).isBefore(LocalDate.now())) submissionStatus = "overdue";
-                } catch (java.time.format.DateTimeParseException ignored) { }
-            }
-            Map<String, Object> item = new HashMap<>();
-            item.put("id", "hw_" + h.getId());
-            item.put("dbId", h.getId());
-            item.put("subject", h.getSubject());
-            item.put("title", h.getTitle());
-            item.put("description", h.getDescription());
-            item.put("dueDate", h.getDueDate());
-            item.put("assignedDate", h.getAssignedDate());
-            item.put("assignedBy", h.getAssignedBy());
-            item.put("status", submissionStatus);
-            item.put("className", h.getClassName());
-            result.add(item);
-        }
-
-        return ResponseEntity.ok(result);
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        if (user.getRole() == Role.STUDENT || user.getRole() == Role.PARENT) return getStudentAssignments(null);
+        return getTeacherAssignments(className, null);
     }
 
     @PostMapping("/homework/submit/{id}")
@@ -765,8 +828,7 @@ public class MobileAppController {
         catch (NumberFormatException e) { throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid homework ID"); }
         HomeworkEntity homework = homeworkRepository.findById(homeworkId)
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Homework not found"));
-        if (!homework.getClassName().equalsIgnoreCase(student.getClassName()) ||
-                (homework.getSection() != null && !homework.getSection().isBlank() && !homework.getSection().equalsIgnoreCase(student.getSection())))
+        if (!assignedTo(homework, student))
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Homework is not assigned to your class");
         HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(homeworkId, student.getId()).orElseGet(() -> {
             HomeworkSubmissionEntity created = new HomeworkSubmissionEntity();
@@ -775,6 +837,14 @@ public class MobileAppController {
             created.setSubmittedAt(java.time.LocalDateTime.now());
             return created;
         });
+        submission.setSubmittedAt(LocalDateTime.now());
+        if (Set.of("GRADED", "ACCEPTED").contains(Objects.toString(submission.getStatus(), "").toUpperCase()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Reviewed work cannot be replaced unless the teacher rejects it for resubmission");
+        submission.setStudentName(student.getName());
+        submission.setStudentRollNo(student.getRollNo());
+        submission.setStudentAdmissionNo(student.getAdmissionNo());
+        submission.setStatus("SUBMITTED");
+        submission.setPoints(null); submission.setTeacherFeedback(null); submission.setReviewedAt(null);
         homeworkSubmissionRepository.save(submission);
 
         Map<String, Object> res = new HashMap<>();
@@ -790,7 +860,7 @@ public class MobileAppController {
     @GetMapping("/teacher/classes")
     @Operation(summary = "Get teacher assigned classes with student counts")
     public ResponseEntity<List<Map<String, Object>>> getTeacherClasses() {
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
+        UserEntity user = assignmentManager();
         List<Map<String, Object>> classesList = new ArrayList<>();
 
         TeacherEntity teacher = null;
@@ -810,14 +880,14 @@ public class MobileAppController {
             }
         }
 
-        if (classNames.isEmpty()) {
+        if (classNames.isEmpty() && user.getRole() != Role.TEACHER) {
             List<SchoolClassEntity> scList = schoolClassRepository.findAll();
             for (SchoolClassEntity sc : scList) {
                 classNames.add(sc.getName() + (sc.getSection() != null ? " - " + sc.getSection() : ""));
             }
         }
 
-        if (classNames.isEmpty()) {
+        if (classNames.isEmpty() && user.getRole() != Role.TEACHER) {
             List<StudentEntity> students = studentRepository.findAll();
             for (StudentEntity s : students) {
                 if (s.getClassName() != null && !s.getClassName().isBlank()) {
@@ -830,7 +900,7 @@ public class MobileAppController {
         String teacherSubject = teacher != null && teacher.getSubject() != null ? teacher.getSubject() : "All Subjects";
         for (String cName : classNames) {
             String tempBaseClass = cName;
-            String tempSection = "A";
+            String tempSection = "";
             if (cName.contains("-")) {
                 String[] parts = cName.split("-");
                 tempBaseClass = parts[0].trim();
@@ -852,10 +922,10 @@ public class MobileAppController {
             map.put("section", section);
             map.put("subject", teacherSubject);
             map.put("totalStudents", totalStudents);
-            map.put("room", "Room " + (100 + idx));
-            map.put("isClassTeacher", idx == 2);
-            map.put("timing", "09:00 AM - 10:00 AM");
-            map.put("syllabusProgress", 0.70);
+            map.put("room", "");
+            map.put("isClassTeacher", false);
+            map.put("timing", "");
+            map.put("syllabusProgress", 0.0);
             classesList.add(map);
         }
 
@@ -868,6 +938,7 @@ public class MobileAppController {
             @PathVariable String className,
             @RequestParam(required = false) String section) {
 
+        requireAssignedClass(className, section);
         List<StudentEntity> list;
         if (section != null && !section.isBlank()) {
             list = studentRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase(className.trim(), section.trim());
@@ -949,22 +1020,16 @@ public class MobileAppController {
     @PostMapping("/teacher/lessons")
     @Operation(summary = "Create a new lesson/chapter")
     public ResponseEntity<Map<String, Object>> createTeacherLesson(@RequestBody Map<String, Object> req) {
-        String className = String.valueOf(req.getOrDefault("className", "Class 10"));
-        String chapterNumber = String.valueOf(req.getOrDefault("chapterNumber", "Chapter 1"));
-        String chapterTitle = String.valueOf(req.getOrDefault("chapterTitle", "New Lesson"));
-        String description = String.valueOf(req.getOrDefault("description", ""));
-        Long subjectId = req.containsKey("subjectId") && req.get("subjectId") != null
-                ? Long.valueOf(req.get("subjectId").toString()) : null;
-
-        SubjectEntity subject = null;
-        if (subjectId != null) {
-            subject = subjectRepository.findById(subjectId).orElse(null);
-        }
-        if (subject == null) {
-            subject = subjectRepository.findAll().stream().findFirst().orElseGet(() ->
-                    subjectRepository.save(SubjectEntity.builder().name("General").code("GEN").status("Active").build())
-            );
-        }
+        assignmentManager();
+        String className = Objects.toString(req.get("className"), "").trim();
+        String chapterNumber = Objects.toString(req.get("chapterNumber"), "").trim();
+        String chapterTitle = Objects.toString(req.get("chapterTitle"), "").trim();
+        String description = Objects.toString(req.get("description"), "");
+        if (className.isBlank() || chapterTitle.isBlank() || req.get("subjectId") == null)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Class, title and subject are required");
+        Long subjectId = Long.valueOf(req.get("subjectId").toString());
+        SubjectEntity subject = subjectRepository.findById(subjectId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Subject not found"));
 
         SubjectChapterEntity chapter = SubjectChapterEntity.builder()
                 .subject(subject)
@@ -1043,13 +1108,11 @@ public class MobileAppController {
             @RequestParam(required = false) String className,
             @RequestParam(required = false) String subject) {
 
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        TeacherEntity teacher = null;
-        if (user != null && user.getRole() == Role.TEACHER) {
-            teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
-        }
-
-        List<HomeworkEntity> list = homeworkRepository.findAllByOrderByIdDesc();
+        UserEntity user = assignmentManager();
+        TeacherEntity teacher = user.getRole() == Role.TEACHER
+                ? teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher profile not linked")) : null;
+        List<HomeworkEntity> list = homeworkRepository.findAllByOrderByIdDesc().stream()
+                .filter(h -> teacher == null || Objects.equals(h.getTeacherId(), teacher.getId())).toList();
         if (className != null && !className.isBlank()) {
             list = list.stream().filter(h -> className.equalsIgnoreCase(h.getClassName())).toList();
         }
@@ -1062,13 +1125,8 @@ public class MobileAppController {
             List<HomeworkSubmissionEntity> submissions = homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(h.getId());
             long evaluatedCount = submissions.stream().filter(s -> s.getPoints() != null || "GRADED".equalsIgnoreCase(s.getStatus()) || "ACCEPTED".equalsIgnoreCase(s.getStatus())).count();
 
-            long totalStudents = 35;
-            if (h.getTargetStudentId() != null) {
-                totalStudents = 1;
-            } else if (h.getClassName() != null) {
-                long count = studentRepository.countByClassName(h.getClassName());
-                if (count > 0) totalStudents = count;
-            }
+            long totalStudents = studentRepository.findByClassNameIgnoreCase(h.getClassName()).stream()
+                    .filter(student -> assignedTo(h, student)).count();
 
             Map<String, Object> map = new HashMap<>();
             map.put("id", "hw_" + h.getId());
@@ -1099,19 +1157,45 @@ public class MobileAppController {
     @PostMapping("/teacher/assignments")
     @Operation(summary = "Create an assignment and assign class-wide or to a specific Student ID")
     public ResponseEntity<Map<String, Object>> createTeacherAssignment(@RequestBody Map<String, Object> req) {
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        TeacherEntity teacher = null;
-        if (user != null && user.getRole() == Role.TEACHER) {
-            teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
-        }
+        return persistAssignment(req, null);
+    }
 
-        String title = String.valueOf(req.getOrDefault("title", "Assignment"));
-        String description = String.valueOf(req.getOrDefault("description", ""));
-        String subject = String.valueOf(req.getOrDefault("subject", teacher != null && teacher.getSubject() != null ? teacher.getSubject() : "General"));
-        String className = String.valueOf(req.getOrDefault("className", "Class 10"));
-        String section = String.valueOf(req.getOrDefault("section", "A"));
-        String dueDate = String.valueOf(req.getOrDefault("dueDate", LocalDate.now().plusDays(3).toString()));
-        int points = Integer.parseInt(String.valueOf(req.getOrDefault("points", 100)));
+    @PutMapping("/teacher/assignments/{id}")
+    public ResponseEntity<Map<String, Object>> updateTeacherAssignment(@PathVariable String id, @RequestBody Map<String, Object> req) {
+        return persistAssignment(req, managedAssignment(id));
+    }
+
+    @DeleteMapping("/teacher/assignments/{id}")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<Void> deleteTeacherAssignment(@PathVariable String id) {
+        HomeworkEntity homework = managedAssignment(id);
+        homeworkSubmissionRepository.deleteAll(homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(homework.getId()));
+        homeworkRepository.delete(homework);
+        return ResponseEntity.noContent().build();
+    }
+
+    private ResponseEntity<Map<String, Object>> persistAssignment(Map<String, Object> req, HomeworkEntity existing) {
+        UserEntity user = assignmentManager();
+        TeacherEntity teacher = user.getRole() == Role.TEACHER
+                ? teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher profile not linked")) : null;
+        String title = Objects.toString(req.get("title"), "").trim();
+        String description = Objects.toString(req.get("description"), "").trim();
+        String subject = Objects.toString(req.get("subject"), "").trim();
+        String className = Objects.toString(req.get("className"), "").trim();
+        String section = Objects.toString(req.get("section"), "").trim();
+        String dueDate = Objects.toString(req.get("dueDate"), "").trim();
+        if (title.isBlank() || subject.isBlank() || className.isBlank())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Title, subject and class are required");
+        int points;
+        try {
+            if (LocalDate.parse(dueDate).isBefore(LocalDate.now()) && (existing == null || !dueDate.equals(existing.getDueDate()))) throw new IllegalArgumentException();
+            points = Integer.parseInt(Objects.toString(req.getOrDefault("points", 100)));
+            if (points < 1) throw new IllegalArgumentException();
+        } catch (RuntimeException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a valid future due date and positive maximum points"); }
+        requireAssignedClass(className, section);
+        if (schoolClassRepository.findAll().stream().noneMatch(c -> c.getName().equalsIgnoreCase(className) &&
+                (section.isBlank() || section.equalsIgnoreCase(c.getSection()))))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Class/section does not exist");
         String fileAttachmentUrl = req.containsKey("fileAttachmentUrl") && req.get("fileAttachmentUrl") != null
                 ? req.get("fileAttachmentUrl").toString() : null;
 
@@ -1120,27 +1204,35 @@ public class MobileAppController {
         String targetStudentAdmissionNo = null;
 
         if (req.containsKey("targetStudentId") && req.get("targetStudentId") != null && !req.get("targetStudentId").toString().isBlank()) {
-            try {
-                targetStudentId = Long.valueOf(req.get("targetStudentId").toString());
-                StudentEntity targetStudent = studentRepository.findById(targetStudentId).orElse(null);
-                if (targetStudent != null) {
-                    targetStudentName = targetStudent.getName();
-                    targetStudentAdmissionNo = targetStudent.getAdmissionNo();
-                }
-            } catch (Exception ignored) {}
+            try { targetStudentId = Long.valueOf(req.get("targetStudentId").toString()); }
+            catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid student ID"); }
+            StudentEntity targetStudent = studentRepository.findById(targetStudentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student not found"));
+            if (!className.equalsIgnoreCase(targetStudent.getClassName()) || (!section.isBlank() && !section.equalsIgnoreCase(targetStudent.getSection())))
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student is not enrolled in selected class/section");
+            targetStudentName = targetStudent.getName();
+            targetStudentAdmissionNo = targetStudent.getAdmissionNo();
         }
 
+        if (existing != null && !homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(existing.getId()).isEmpty() &&
+                (!Objects.equals(existing.getClassName(), className) || !Objects.equals(Objects.toString(existing.getSection(), ""), section) || !Objects.equals(existing.getTargetStudentId(), targetStudentId)))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Assignment audience cannot change after students have submitted work");
+        if (existing != null && homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(existing.getId()).stream()
+                .anyMatch(submission -> submission.getPoints() != null && submission.getPoints() > points))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Maximum points cannot be lower than an existing reviewed score");
         HomeworkEntity homework = HomeworkEntity.builder()
+                .id(existing == null ? null : existing.getId())
+                .createdAt(existing == null ? null : existing.getCreatedAt())
                 .title(title)
                 .description(description)
                 .subject(subject)
                 .className(className)
                 .section(section)
-                .assignedDate(LocalDate.now().toString())
+                .assignedDate(existing == null ? LocalDate.now().toString() : existing.getAssignedDate())
                 .dueDate(dueDate)
                 .status("ACTIVE")
-                .assignedBy(teacher != null ? (teacher.getFirstName() + " " + teacher.getLastName()).trim() : (user != null ? user.getName() : "Teacher"))
-                .teacherId(teacher != null ? teacher.getId() : null)
+                .assignedBy(existing != null ? existing.getAssignedBy() : user.getName())
+                .teacherId(existing != null ? existing.getTeacherId() : (teacher != null ? teacher.getId() : null))
                 .points(points)
                 .targetStudentId(targetStudentId)
                 .targetStudentName(targetStudentName)
@@ -1148,6 +1240,9 @@ public class MobileAppController {
                 .fileAttachmentUrl(fileAttachmentUrl)
                 .build();
         homework = homeworkRepository.save(homework);
+        final HomeworkEntity published = homework;
+        studentRepository.findByClassNameIgnoreCase(homework.getClassName()).stream().filter(student -> assignedTo(published, student))
+            .forEach(student -> portalNotifications.family(student, existing==null?"Homework assigned":"Homework updated", published.getTitle(), "homework", published.getId().toString()));
 
         Map<String, Object> res = new HashMap<>();
         res.put("id", "hw_" + homework.getId());
@@ -1171,8 +1266,7 @@ public class MobileAppController {
         String cleanId = id.replace("hw_", "");
         Long homeworkId = Long.valueOf(cleanId);
 
-        HomeworkEntity hw = homeworkRepository.findById(homeworkId)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Assignment not found"));
+        HomeworkEntity hw = managedAssignment(id);
 
         List<HomeworkSubmissionEntity> submissions = homeworkSubmissionRepository.findByHomeworkIdOrderByIdDesc(homeworkId);
 
@@ -1207,6 +1301,7 @@ public class MobileAppController {
         }
 
         for (StudentEntity st : eligibleStudents) {
+            if (!assignedTo(hw, st)) continue;
             if (!submittedStudentIds.contains(st.getId())) {
                 Map<String, Object> map = new HashMap<>();
                 map.put("submissionId", null);
@@ -1237,24 +1332,31 @@ public class MobileAppController {
             @PathVariable Long submissionId,
             @RequestBody Map<String, Object> req) {
 
+        HomeworkEntity hw = managedAssignment(id);
         HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findById(submissionId)
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Submission not found"));
 
+        if (!Objects.equals(submission.getHomeworkId(), hw.getId()))
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Submission does not belong to this assignment");
         String status = String.valueOf(req.getOrDefault("status", "ACCEPTED")).toUpperCase();
-        Integer points = req.containsKey("points") && req.get("points") != null
-                ? Integer.valueOf(req.get("points").toString()) : null;
+        Integer points;
+        try { points = req.get("points") == null ? null : Integer.valueOf(req.get("points").toString()); }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score must be an integer"); }
         String feedback = req.containsKey("feedback") && req.get("feedback") != null
                 ? req.get("feedback").toString() : null;
 
+        if (!Set.of("ACCEPTED", "REJECTED", "GRADED").contains(status) ||
+                (points != null && (points < 0 || points > hw.getPoints())))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid review status or score");
         submission.setStatus(status);
-        if (points != null) {
-            submission.setPoints(points);
-        }
+        if ("REJECTED".equals(status)) submission.setPoints(null);
+        else if (points != null) submission.setPoints(points);
         if (feedback != null) {
             submission.setTeacherFeedback(feedback);
         }
         submission.setReviewedAt(LocalDateTime.now());
         submission = homeworkSubmissionRepository.save(submission);
+        studentRepository.findById(submission.getStudentId()).ifPresent(student -> portalNotifications.family(student, "Homework reviewed", hw.getTitle(), "homework", hw.getId().toString()));
 
         Map<String, Object> res = new HashMap<>();
         res.put("submissionId", submission.getId());
@@ -1274,30 +1376,12 @@ public class MobileAppController {
     public ResponseEntity<List<Map<String, Object>>> getStudentAssignments(
             @RequestParam(required = false) String admissionNo) {
 
-        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
-        StudentEntity student = null;
-
-        if (admissionNo != null && !admissionNo.isBlank()) {
-            student = studentRepository.findByAdmissionNoIgnoreCase(admissionNo.trim()).orElse(null);
-        }
-        if (student == null && user.getRole() == Role.STUDENT) {
-            student = studentRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
-        }
-        if (student == null) {
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked");
-        }
+        StudentEntity student = assignmentStudent(admissionNo);
 
         List<HomeworkEntity> allHw = homeworkRepository.findAllByOrderByIdDesc();
         final StudentEntity currentStudent = student;
 
-        List<HomeworkEntity> eligible = allHw.stream().filter(h -> {
-            boolean classMatch = (h.getClassName() != null && h.getClassName().equalsIgnoreCase(currentStudent.getClassName()));
-            boolean sectionMatch = (h.getSection() == null || h.getSection().isBlank() || h.getSection().equalsIgnoreCase(currentStudent.getSection()));
-            boolean isAssignedToThisStudent = (h.getTargetStudentId() != null && h.getTargetStudentId().equals(currentStudent.getId()));
-            boolean isClassWide = (h.getTargetStudentId() == null);
-
-            return isAssignedToThisStudent || (classMatch && sectionMatch && isClassWide);
-        }).toList();
+        List<HomeworkEntity> eligible = allHw.stream().filter(h -> assignedTo(h, currentStudent)).toList();
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (HomeworkEntity h : eligible) {
@@ -1377,8 +1461,11 @@ public class MobileAppController {
         HomeworkEntity homework = homeworkRepository.findById(homeworkId)
                 .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Assignment not found"));
 
+        if (!assignedTo(homework, student)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Assignment is not assigned to you");
         String text = String.valueOf(req.getOrDefault("submissionText", ""));
         String fileUrl = req.containsKey("fileUrl") && req.get("fileUrl") != null ? req.get("fileUrl").toString() : null;
+        if (text.isBlank() && (fileUrl == null || fileUrl.isBlank()))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide an answer or attachment");
 
         HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(homeworkId, student.getId())
                 .orElseGet(() -> HomeworkSubmissionEntity.builder()
@@ -1386,6 +1473,8 @@ public class MobileAppController {
                         .studentId(student.getId())
                         .build());
 
+        if (Set.of("GRADED", "ACCEPTED").contains(Objects.toString(submission.getStatus(), "").toUpperCase()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Reviewed work cannot be replaced unless the teacher rejects it for resubmission");
         submission.setStudentName(student.getName());
         submission.setStudentRollNo(student.getRollNo());
         submission.setStudentAdmissionNo(student.getAdmissionNo());
@@ -1393,7 +1482,12 @@ public class MobileAppController {
         submission.setSubmissionText(text);
         submission.setFileUrl(fileUrl);
         submission.setStatus("SUBMITTED");
+        submission.setPoints(null);
+        submission.setTeacherFeedback(null);
+        submission.setReviewedAt(null);
         submission = homeworkSubmissionRepository.save(submission);
+        if(homework.getTeacherId()!=null) teacherRepository.findById(homework.getTeacherId()).ifPresent(teacher ->
+            portalUsers.findByEmailIgnoreCase(teacher.getEmail()).ifPresent(account -> portalNotifications.send(account.getId(), "Homework submitted", student.getName()+": "+homework.getTitle(), "homework", homework.getId().toString())));
 
         Map<String, Object> res = new HashMap<>();
         res.put("id", id);
@@ -1408,20 +1502,10 @@ public class MobileAppController {
     // ==========================================
     @GetMapping("/fees")
     @Operation(summary = "Get fee records backed by PostgreSQL database")
-    public ResponseEntity<List<Map<String, Object>>> getFees() {
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String targetAdmissionNo = null;
-        if (user != null && user.getRole() == Role.STUDENT) {
-            Optional<StudentEntity> s = studentRepository.findByEmail(user.getEmail());
-            if (s.isPresent()) {
-                targetAdmissionNo = s.get().getAdmissionNo();
-            }
-        } else if (user != null && user.getRole() == Role.PARENT) {
-            Optional<GuardianEntity> g = guardianRepository.findByEmail(user.getEmail());
-            if (g.isPresent()) {
-                targetAdmissionNo = g.get().getStudentAdmissionNo();
-            }
-        }
+    public ResponseEntity<List<Map<String, Object>>> getFees(@RequestParam(required = false) String admissionNo) {
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        String targetAdmissionNo = (user.getRole() == Role.STUDENT || user.getRole() == Role.PARENT)
+                ? assignmentStudent(admissionNo).getAdmissionNo() : null;
 
         List<FeeCollectionEntity> entities;
         if (targetAdmissionNo != null && !targetAdmissionNo.isBlank()) {
@@ -1441,8 +1525,7 @@ public class MobileAppController {
             map.put("status", f.getStatus() != null ? f.getStatus().toLowerCase() : "unpaid");
             if ("paid".equalsIgnoreCase(f.getStatus())) {
                 map.put("paymentDate", f.getDate());
-                map.put("transactionId", f.getNote() != null && f.getNote().startsWith("TXN-")
-                        ? f.getNote() : "TXN-" + f.getId() + "A");
+                map.put("transactionId", f.getOnlineReceipt() != null ? f.getOnlineReceipt() : (f.getNote() != null && f.getNote().startsWith("TXN-") ? f.getNote() : null));
             }
             fees.add(map);
         }
@@ -1451,31 +1534,10 @@ public class MobileAppController {
     }
 
     @PostMapping("/fees/pay/{id}")
-    @Operation(summary = "Pay fee online - immediately updates PostgreSQL and Accountant Dashboard")
+    @Operation(summary = "Online fee payment requires a configured, server-verified payment provider")
     public ResponseEntity<Map<String, Object>> payFee(@PathVariable String id) {
-        String cleanIdStr = id.replace("fee_", "");
-        String txn = "TXN-" + System.currentTimeMillis() + "G";
-
-        try {
-            Long dbId = Long.parseLong(cleanIdStr);
-            feeCollectionRepository.findById(dbId).ifPresent(entity -> {
-                entity.setStatus("paid");
-                entity.setPaid(entity.getAmount());
-                entity.setDue("0");
-                entity.setDate(LocalDate.now().toString());
-                entity.setNote(txn);
-                feeCollectionRepository.save(entity);
-            });
-        } catch (Exception e) {
-            log.warn("Could not find fee entity with id: {}", id);
-        }
-
-        Map<String, Object> res = new HashMap<>();
-        res.put("id", id);
-        res.put("status", "paid");
-        res.put("transactionId", txn);
-        res.put("message", "Fee paid successfully!");
-        return ResponseEntity.ok(res);
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
+                "Online payment is not configured. Contact the school to pay and receive a verified receipt.");
     }
 
     // ==========================================
@@ -1487,53 +1549,24 @@ public class MobileAppController {
             @RequestParam(required = false) String className,
             @RequestParam(required = false) String section,
             @RequestParam(required = false) String day,
-            @RequestParam(required = false) String teacherName) {
+            @RequestParam(required = false) String teacherName,
+            @RequestParam(required = false) String admissionNo) {
 
         UserEntity user = securityUtil.getCurrentUser().orElse(null);
         String resolvedClass = className;
         String resolvedSection = section;
         String resolvedTeacher = teacherName;
 
-        if (user != null) {
-            if (user.getRole() == Role.STUDENT) {
-                Optional<StudentEntity> sOpt = studentRepository.findByEmail(user.getEmail());
-                if (sOpt.isPresent()) {
-                    StudentEntity s = sOpt.get();
-                    if (resolvedClass == null || resolvedClass.isBlank()) {
-                        resolvedClass = s.getClassName();
-                    }
-                    if (resolvedSection == null || resolvedSection.isBlank()) {
-                        resolvedSection = s.getSection();
-                    }
-                }
-            } else if (user.getRole() == Role.TEACHER) {
-                Optional<TeacherEntity> tOpt = teacherRepository.findByEmail(user.getEmail());
-                if (tOpt.isPresent()) {
-                    TeacherEntity t = tOpt.get();
-                    if (resolvedTeacher == null || resolvedTeacher.isBlank()) {
-                        String fullName = ((t.getFirstName() != null ? t.getFirstName() : "") + " " +
-                                (t.getLastName() != null ? t.getLastName() : "")).trim();
-                        resolvedTeacher = !fullName.isEmpty() ? fullName : user.getName();
-                    }
-                }
-            } else if (user.getRole() == Role.PARENT) {
-                Optional<GuardianEntity> gOpt = guardianRepository.findByEmail(user.getEmail());
-                if (gOpt.isPresent()) {
-                    String adm = gOpt.get().getStudentAdmissionNo();
-                    if (adm != null && !adm.isBlank()) {
-                        Optional<StudentEntity> sOpt = studentRepository.findByAdmissionNo(adm);
-                        if (sOpt.isPresent()) {
-                            StudentEntity s = sOpt.get();
-                            if (resolvedClass == null || resolvedClass.isBlank()) {
-                                resolvedClass = s.getClassName();
-                            }
-                            if (resolvedSection == null || resolvedSection.isBlank()) {
-                                resolvedSection = s.getSection();
-                            }
-                        }
-                    }
-                }
-            }
+        if (user == null) throw new UnauthorizedException("Not authenticated");
+        if (user.getRole() == Role.STUDENT || user.getRole() == Role.PARENT) {
+            StudentEntity student = assignmentStudent(admissionNo);
+            resolvedClass = student.getClassName();
+            resolvedSection = student.getSection();
+            resolvedTeacher = null;
+        } else if (user.getRole() == Role.TEACHER) {
+            TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Teacher profile not linked"));
+            resolvedTeacher = (teacher.getFirstName() + " " + teacher.getLastName()).trim();
         }
 
         if (resolvedClass != null && resolvedClass.contains("-")
@@ -1551,7 +1584,7 @@ public class MobileAppController {
                 if (resolvedSection != null && !resolvedSection.isBlank()) {
                     entities = timetableRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase(resolvedClass, resolvedSection);
                 }
-                if (entities.isEmpty()) {
+                if (resolvedSection == null || resolvedSection.isBlank()) {
                     entities = timetableRepository.findByClassNameIgnoreCase(resolvedClass);
                 }
             } else {
@@ -1592,12 +1625,16 @@ public class MobileAppController {
     // ==========================================
     @GetMapping("/exams")
     @Operation(summary = "Get exam schedule & real results backed by PostgreSQL")
-    public ResponseEntity<List<Map<String, Object>>> getExams() {
+    public ResponseEntity<List<Map<String, Object>>> getExams(@RequestParam(required = false) String admissionNo) {
+        UserEntity viewer = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        StudentEntity selectedStudent = (viewer.getRole() == Role.STUDENT || viewer.getRole() == Role.PARENT) ? assignmentStudent(admissionNo) : null;
         List<Map<String, Object>> exams = new ArrayList<>();
 
         // 1. Exam schedules from DB
         List<ExamScheduleEntity> schedules = examScheduleRepository.findAllByOrderByIdDesc();
         for (ExamScheduleEntity s : schedules) {
+            if (selectedStudent != null && (!Objects.toString(selectedStudent.getClassName(), "").equalsIgnoreCase(s.getClassName()) ||
+                    (s.getSection() != null && !s.getSection().isBlank() && !s.getSection().equalsIgnoreCase(selectedStudent.getSection())))) continue;
             String title = (s.getExamName() != null && !s.getExamName().isBlank())
                     ? s.getExamName() : ((s.getClassName() != null ? s.getClassName() : "") + " " + (s.getSubject() != null ? s.getSubject() : "") + " Exam").trim();
             String desc = (s.getSubject() != null ? s.getSubject() : "") + " examination for " + (s.getClassName() != null ? s.getClassName() : "");
@@ -1615,26 +1652,15 @@ public class MobileAppController {
                     start,
                     end,
                     room,
-                    100.0,
+                    s.getMaxMarks() == null ? 100.0 : s.getMaxMarks(),
                     null,
                     "upcoming",
                     s.getClassName() != null ? s.getClassName() : ""));
+            exams.get(exams.size() - 1).put("section", s.getSection());
         }
 
         // 2. Exam results from DB
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String targetAdmissionNo = null;
-        if (user != null && user.getRole() == Role.STUDENT) {
-            Optional<StudentEntity> s = studentRepository.findByEmail(user.getEmail());
-            if (s.isPresent()) {
-                targetAdmissionNo = s.get().getAdmissionNo();
-            }
-        } else if (user != null && user.getRole() == Role.PARENT) {
-            Optional<GuardianEntity> g = guardianRepository.findByEmail(user.getEmail());
-            if (g.isPresent()) {
-                targetAdmissionNo = g.get().getStudentAdmissionNo();
-            }
-        }
+        String targetAdmissionNo = selectedStudent != null ? selectedStudent.getAdmissionNo() : null;
 
         List<ExamResultEntity> results;
         if (targetAdmissionNo != null && !targetAdmissionNo.isBlank()) {
@@ -1654,10 +1680,10 @@ public class MobileAppController {
                     r.getExam() != null ? r.getExam() : "Examination Assessment",
                     "Result: " + statusText + " (" + (r.getPercent() != null ? r.getPercent() : 0) + "%)" + gradeText,
                     r.getCreatedAt() != null ? r.getCreatedAt().toLocalDate().toString() : LocalDate.now().toString(),
-                    "09:00 AM",
-                    "10:30 AM",
-                    "Classroom",
-                    100.0,
+                    "",
+                    "",
+                    "",
+                    r.getMaxMarks() == null ? 100.0 : r.getMaxMarks(),
                     scored,
                     "completed",
                     r.getClassName() != null ? r.getClassName() : ""));
@@ -1670,24 +1696,30 @@ public class MobileAppController {
     @Operation(summary = "Create a new exam schedule backed by PostgreSQL")
     public ResponseEntity<Map<String, Object>> createExam(@RequestBody Map<String, Object> req) {
         String subject = String.valueOf(req.getOrDefault("subject", ""));
-        String title = String.valueOf(req.getOrDefault("title", "Exam"));
+        assignmentManager();
+        String title = Objects.toString(req.get("title"), "").trim();
         String desc = String.valueOf(req.getOrDefault("description", ""));
         String date = String.valueOf(req.getOrDefault("date", LocalDate.now().toString()));
-        String start = String.valueOf(req.getOrDefault("startTime", "09:00 AM"));
-        String end = String.valueOf(req.getOrDefault("endTime", "11:30 AM"));
+        String start = Objects.toString(req.get("startTime"), "").trim();
+        String end = Objects.toString(req.get("endTime"), "").trim();
         String room = String.valueOf(req.getOrDefault("room", ""));
         double maxMarks = Double.parseDouble(String.valueOf(req.getOrDefault("maxMarks", 100.0)));
         String className = String.valueOf(req.getOrDefault("className", ""));
 
+        String section = Objects.toString(req.get("section"), "").trim();
+        if (title.isBlank() || subject.isBlank() || className.isBlank() || start.isBlank() || end.isBlank() || maxMarks <= 0)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide title, subject, class, times and positive maximum marks");
+        requireAssignedClass(className, section);
         ExamScheduleEntity entity = ExamScheduleEntity.builder()
                 .examName(title)
                 .className(className)
-                .section("A")
+                .section(section)
                 .subject(subject)
                 .date(date)
                 .startTime(start)
                 .endTime(end)
-                .duration("2 Hours")
+                .duration(Objects.toString(req.get("duration"), ""))
+                .maxMarks(maxMarks)
                 .room(room)
                 .build();
         entity = examScheduleRepository.save(entity);
@@ -1701,34 +1733,38 @@ public class MobileAppController {
     @Operation(summary = "Upload scored marks for an exam - persists directly to PostgreSQL ExamResultEntity")
     public ResponseEntity<Map<String, Object>> uploadExamScore(@PathVariable String id,
             @RequestBody Map<String, Object> req) {
-        double score = Double.parseDouble(String.valueOf(req.getOrDefault("scoredMarks", req.getOrDefault("score", 0.0))));
-        String studentAdm = String.valueOf(req.getOrDefault("admissionNo", ""));
-        String studentName = String.valueOf(req.getOrDefault("name", ""));
-        String examTitle = String.valueOf(req.getOrDefault("exam", "Exam"));
-        String rollNo = String.valueOf(req.getOrDefault("rollNo", ""));
-        String className = String.valueOf(req.getOrDefault("className", ""));
-
-        int percent = (int) Math.round(score);
-        String grade = percent >= 90 ? "A+" : (percent >= 80 ? "A" : (percent >= 70 ? "B" : (percent >= 50 ? "C" : "D")));
-        String result = percent >= 40 ? "PASS" : "FAIL";
-
-        ExamResultEntity resultEntity = ExamResultEntity.builder()
-                .admissionNo(studentAdm)
-                .name(studentName)
-                .rollNo(rollNo)
-                .className(className)
-                .exam(examTitle)
-                .total((int) score)
-                .percent(percent)
-                .grade(grade)
-                .result(result)
-                .build();
+        assignmentManager();
+        Long scheduleId;
+        double score;
+        try {
+            if (id.startsWith("res_")) {
+                ExamResultEntity existing = examResultRepository.findById(Long.valueOf(id.substring(4)))
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Result not found"));
+                scheduleId = existing.getScheduleId();
+                if (scheduleId == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Update legacy results through the dashboard");
+            } else scheduleId = Long.valueOf(id.replace("sched_", ""));
+            score = Double.parseDouble(Objects.toString(req.get("scoredMarks"), ""));
+        }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Valid schedule ID and score are required"); }
+        ExamScheduleEntity schedule = examScheduleRepository.findById(scheduleId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Exam schedule not found"));
+        requireAssignedClass(schedule.getClassName(), schedule.getSection());
+        double maximum = schedule.getMaxMarks() == null ? 100 : schedule.getMaxMarks();
+        if (!Double.isFinite(score) || score < 0 || score > maximum) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is outside the allowed range");
+        String admission = Objects.toString(req.get("admissionNo"), "").trim();
+        StudentEntity student = studentRepository.findByAdmissionNoIgnoreCase(admission).orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select an enrolled student"));
+        if (!schedule.getClassName().equalsIgnoreCase(student.getClassName()) || (schedule.getSection() != null && !schedule.getSection().isBlank() && !schedule.getSection().equalsIgnoreCase(student.getSection())))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Student is not enrolled in this exam class/section");
+        int percent = (int) Math.round(score / maximum * 100);
+        String grade = percent >= 90 ? "A+" : percent >= 80 ? "A" : percent >= 70 ? "B" : percent >= 50 ? "C" : "D";
+        ExamResultEntity resultEntity = examResultRepository.findByAdmissionNoIgnoreCaseOrderByIdDesc(admission).stream()
+                .filter(result -> scheduleId.equals(result.getScheduleId())).findFirst().orElseGet(ExamResultEntity::new);
+        resultEntity.setAdmissionNo(student.getAdmissionNo()); resultEntity.setName(student.getName());
+        resultEntity.setRollNo(student.getRollNo()); resultEntity.setClassName(student.getClassName()); resultEntity.setExam(schedule.getExamName());
+        resultEntity.setScheduleId(scheduleId); resultEntity.setMaxMarks(maximum); resultEntity.setTotal((int)Math.round(score));
+        resultEntity.setPercent(percent); resultEntity.setGrade(grade); resultEntity.setResult(percent >= 40 ? "PASS" : "FAIL");
         resultEntity = examResultRepository.save(resultEntity);
-
-        Map<String, Object> target = createExam("res_" + resultEntity.getId(), "General", examTitle,
-                "Marks uploaded: " + score + "/100 (" + grade + ")",
-                LocalDate.now().toString(), "09:00 AM", "11:30 AM", "Classroom", 100.0, score, "completed", className);
-
+        Map<String,Object> target = createExam("res_" + resultEntity.getId(), schedule.getSubject(), schedule.getExamName(), "Grade: " + grade,
+                schedule.getDate(), schedule.getStartTime(), schedule.getEndTime(), schedule.getRoom(), maximum, score, "completed", schedule.getClassName());
         return ResponseEntity.ok(target);
     }
 
@@ -1830,18 +1866,21 @@ public class MobileAppController {
     @GetMapping("/leaves")
     @Operation(summary = "Get leave applications backed by PostgreSQL database")
     public ResponseEntity<List<Map<String, Object>>> getLeaves() {
+        UserEntity viewer = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        boolean manages = Set.of(Role.ADMIN, Role.MASTER_ADMIN, Role.SUPER_ADMIN, Role.PRINCIPAL).contains(viewer.getRole());
         List<LeaveRequestEntity> entities = leaveRequestRepository.findAllByOrderByIdDesc();
         List<Map<String, Object>> leaves = new ArrayList<>();
 
         for (LeaveRequestEntity lev : entities) {
+            if (!manages && !Objects.equals(viewer.getId(), lev.getUserId())) continue;
             Map<String, Object> m = new HashMap<>();
             m.put("id", "lev_" + lev.getId());
             m.put("dbId", lev.getId());
             m.put("employeeName", lev.getName());
             m.put("designation", lev.getUserType() != null ? lev.getUserType() : "Faculty");
             m.put("reason", lev.getReason() != null ? lev.getReason() : "Personal Leave");
-            m.put("fromDate", lev.getDate() != null ? lev.getDate() : "");
-            m.put("toDate", lev.getDate() != null ? lev.getDate() : "");
+            m.put("fromDate", lev.getFromDate() != null ? lev.getFromDate() : Objects.toString(lev.getDate(), ""));
+            m.put("toDate", lev.getToDate() != null ? lev.getToDate() : Objects.toString(lev.getDate(), ""));
             m.put("status", lev.getStatus() != null ? lev.getStatus().toLowerCase() : "pending");
             m.put("appliedOn", lev.getApplyDate() != null ? lev.getApplyDate() : "");
             leaves.add(m);
@@ -1853,17 +1892,25 @@ public class MobileAppController {
     @PostMapping("/leaves")
     @Operation(summary = "Apply for leave - saved directly into PostgreSQL")
     public ResponseEntity<Map<String, Object>> applyLeave(@RequestBody Map<String, Object> req) {
-        UserEntity user = securityUtil.getCurrentUser().orElse(null);
-        String name = user != null ? user.getName() : "Faculty Member";
-        String reason = String.valueOf(req.getOrDefault("reason", "Personal leave"));
-        String fromDate = String.valueOf(req.getOrDefault("fromDate", LocalDate.now().toString()));
-
+        UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
+        String name = user.getName();
+        String reason = Objects.toString(req.get("reason"), "").trim();
+        if (reason.isBlank()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Leave reason is required");
+        LocalDate from;
+        LocalDate to;
+        try {
+            from = LocalDate.parse(Objects.toString(req.get("fromDate"), "").split("[T ]")[0]);
+            to = LocalDate.parse(Objects.toString(req.get("toDate"), "").split("[T ]")[0]);
+            if (to.isBefore(from)) throw new IllegalArgumentException();
+        } catch (RuntimeException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provide a valid leave date range"); }
+        String fromDate = from.toString();
         LeaveRequestEntity entity = LeaveRequestEntity.builder()
                 .name(name)
+                .userId(user.getId()).fromDate(fromDate).toDate(to.toString())
                 .userType(user != null ? user.getRole().name() : "FACULTY")
                 .leaveType(String.valueOf(req.getOrDefault("leaveType", "Casual")))
                 .date(fromDate)
-                .duration("1 Day")
+                .duration((java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1) + " Days")
                 .status("Pending")
                 .reason(reason)
                 .applyDate(LocalDate.now().toString())
@@ -1872,7 +1919,7 @@ public class MobileAppController {
 
         Map<String, Object> leave = createLeave("lev_" + entity.getId(), name,
                 user != null ? user.getRole().name() : "Faculty",
-                reason, fromDate, fromDate, "pending", LocalDate.now().toString());
+                reason, fromDate, to.toString(), "pending", LocalDate.now().toString());
 
         return ResponseEntity.ok(leave);
     }
@@ -1880,15 +1927,12 @@ public class MobileAppController {
     @PatchMapping("/leaves/{id}/approve")
     @Operation(summary = "Approve leave - updates PostgreSQL")
     public ResponseEntity<Map<String, Object>> approveLeave(@PathVariable String id) {
-        String cleanIdStr = id.replace("lev_", "");
-        try {
-            Long dbId = Long.parseLong(cleanIdStr);
-            leaveRequestRepository.findById(dbId).ifPresent(l -> {
-                l.setStatus("Approved");
-                leaveRequestRepository.save(l);
-            });
-        } catch (Exception ignored) {
-        }
+        Long key;
+        try { key = Long.valueOf(id.replace("lev_", "")); }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid leave ID"); }
+        LeaveRequestEntity leave = leaveRequestRepository.findById(key).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave request not found"));
+        leave.setStatus("Approved");
+        leaveRequestRepository.save(leave);
 
         Map<String, Object> res = new HashMap<>();
         res.put("id", id);
@@ -1899,15 +1943,12 @@ public class MobileAppController {
     @PatchMapping("/leaves/{id}/reject")
     @Operation(summary = "Reject leave - updates PostgreSQL")
     public ResponseEntity<Map<String, Object>> rejectLeave(@PathVariable String id) {
-        String cleanIdStr = id.replace("lev_", "");
-        try {
-            Long dbId = Long.parseLong(cleanIdStr);
-            leaveRequestRepository.findById(dbId).ifPresent(l -> {
-                l.setStatus("Rejected");
-                leaveRequestRepository.save(l);
-            });
-        } catch (Exception ignored) {
-        }
+        Long key;
+        try { key = Long.valueOf(id.replace("lev_", "")); }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid leave ID"); }
+        LeaveRequestEntity leave = leaveRequestRepository.findById(key).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Leave request not found"));
+        leave.setStatus("Rejected");
+        leaveRequestRepository.save(leave);
 
         Map<String, Object> res = new HashMap<>();
         res.put("id", id);

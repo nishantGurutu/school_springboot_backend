@@ -32,6 +32,12 @@ public class LeaveRequestEntity {
 
     private String leaveType;
 
+    private Long userId;
+
+    private String fromDate;
+
+    private String toDate;
+
     private String date;
 
     private String duration;

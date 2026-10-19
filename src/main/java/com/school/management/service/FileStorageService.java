@@ -34,6 +34,8 @@ public class FileStorageService {
     }
 
     public UploadResult storeFile(MultipartFile file, String subDirectory) {
+        if (file.isEmpty() || file.getSize() > 20L * 1024 * 1024)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Choose a nonempty file up to 20 MB");
         String originalFileName = StringUtils.cleanPath(file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf");
         try {
             if (originalFileName.contains("..")) {
@@ -73,8 +75,12 @@ public class FileStorageService {
         try {
             // Check direct or subfolders (e.g. notes/)
             Path filePath = this.fileStorageLocation.resolve(fileName).normalize();
+            if (!filePath.startsWith(this.fileStorageLocation))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid attachment path");
             if (!Files.exists(filePath)) {
                 filePath = this.fileStorageLocation.resolve("notes").resolve(fileName).normalize();
+                if (!filePath.startsWith(this.fileStorageLocation))
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid attachment path");
             }
 
             Resource resource = new UrlResource(filePath.toUri());

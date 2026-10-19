@@ -10,7 +10,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 
 /**
- * Fixes pre-existing database constraints and purges legacy code-seeded mock data.
+ * Fixes pre-existing database constraints without deleting school records.
  */
 @Configuration
 @Slf4j
@@ -112,39 +112,6 @@ public class DatabaseSchemaFix {
                 jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS points INT");
                 jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT");
                 jdbcTemplate.execute("ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP");
-            } catch (Exception ignored) {}
-
-            // Purge legacy static records that were seeded by backend code
-            try {
-                jdbcTemplate.execute("DELETE FROM homeworks WHERE title IN ('Quadratic Equations', 'Solar System Project', 'Persuasive Essay Writing', 'French Revolution Timeline')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM fee_collections WHERE admission_no = 'ADM-24' AND (note LIKE 'TXN-%' OR note = 'Academic tuition and lab fees')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM exam_schedules WHERE exam_name IN ('Term 1 Midterm Examination', 'Term 1 Science Assessment', 'Term 1 English Literature')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM exam_results WHERE admission_no = 'ADM-24' AND exam IN ('Weekly Math Quiz', 'Weekly Science Test')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM leave_requests WHERE reason IN ('Medical appointment - scheduled follow-up', 'Family function - cousin''s wedding', 'Personal leave - urgent personal work')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM notices WHERE title IN ('Annual Sports Day 2026 Registration Open', 'Mid-Term Examination Schedule Notification', 'Parent Teacher Meeting (PTM) Details')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM staff WHERE email IN ('principal@school.com', 'accountant@school.com', 'librarian@school.com')");
-            } catch (Exception ignored) {}
-
-            try {
-                jdbcTemplate.execute("DELETE FROM teachers WHERE LOWER(email) = 'admin@school.com'");
             } catch (Exception ignored) {}
 
             // Ensure transport_trips table has the start location and daily checklist columns

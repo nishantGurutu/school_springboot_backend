@@ -34,3 +34,6 @@ build/
 
 ### Runtime uploads ###
 uploads/
+
+# Isolated Maven verification output (separate from IDE classes)
+target-verification/

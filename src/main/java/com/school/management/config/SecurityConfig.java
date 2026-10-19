@@ -73,7 +73,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/leaves/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "STAFF")
                         .requestMatchers("/api/certificates/**")
-                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT")
+                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
                         .requestMatchers("/api/library/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "LIBRARIAN", "TEACHER", "STUDENT")
                         .requestMatchers("/api/notices/**").permitAll()
@@ -88,6 +88,7 @@ public class SecurityConfig {
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
 
                         // File storage & downloads
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/files/**").authenticated()
                         .requestMatchers("/api/files/**").permitAll()
 
                         .requestMatchers("/api/teacher/homework/**")
@@ -104,6 +105,11 @@ public class SecurityConfig {
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL")
                         .requestMatchers("/api/mobile/expenses/**", "/api/mobile/payroll/**")
                         .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "STAFF")
+
+                        .requestMatchers("/api/mobile/teacher/**", "/api/mobile/classes/**")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
+                        .requestMatchers("/api/mobile/student/assignments/**")
+                        .hasAnyRole("STUDENT", "PARENT")
 
                         // Mobile App Endpoints: notices and holidays can be viewed by all mobile
                         // clients
