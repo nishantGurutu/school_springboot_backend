@@ -1,10 +1,14 @@
 package com.school.management.config;
-import com.school.management.service.*;
-import com.school.management.repository.*;
+
+import com.school.management.repository.FeePaymentRepository;
+import com.school.management.service.FeePaymentService;
+import com.school.management.service.RazorpayGateway;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.annotation.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+
 @Configuration @EnableScheduling @RequiredArgsConstructor @Slf4j
 public class PaymentReconciliation {
  private final FeePaymentRepository payments;

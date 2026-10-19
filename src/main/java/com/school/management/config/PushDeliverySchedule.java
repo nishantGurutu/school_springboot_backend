@@ -1,10 +1,14 @@
 package com.school.management.config;
-import com.school.management.service.*;
-import com.school.management.repository.*;
+
+import com.school.management.repository.PushDeliveryRepository;
+import com.school.management.service.FirebasePushGateway;
+import com.school.management.service.PushDeliveryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
+
 import java.time.Instant;
+
 @Configuration @RequiredArgsConstructor
 public class PushDeliverySchedule {
  private final PushDeliveryRepository deliveries;

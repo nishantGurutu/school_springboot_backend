@@ -1,11 +1,19 @@
 package com.school.management.service;
-import com.school.management.entity.*;
+
+import com.school.management.entity.PortalNotificationEntity;
+import com.school.management.entity.PushDeliveryEntity;
+import com.school.management.entity.StudentEntity;
 import com.school.management.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
+
 @Service @RequiredArgsConstructor
 public class PortalNotificationService {
  private final PortalNotificationRepository notifications;

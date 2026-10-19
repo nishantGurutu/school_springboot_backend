@@ -108,4 +108,37 @@ class TripLocationTrackingTest {
         assertThrows(IllegalStateException.class, () -> service.ingestGpsBatch(10L, "driver@school.com", new TripDtos.BatchGpsRequest()));
         verifyNoInteractions(history);
     }
+    @Test void startCannotChangeAssignedBusOrRoute() {
+        when(drivers.findByEmailIgnoreCase("driver@school.com")).thenReturn(Optional.of(
+                DriverProfileEntity.builder().id(2L).schoolId("SCH-001").assignedBusId(3L).build()));
+        when(assignments.findFirstByDriverIdAndStatusOrderByIdDesc(2L, "ACTIVE")).thenReturn(Optional.of(
+                BusAssignmentEntity.builder().id(44L).schoolId("SCH-001").driverId(2L).busId(3L).routeId(4L).status("ACTIVE").build()));
+        assertThrows(UnauthorizedException.class, () -> service.startTrip("driver@school.com",
+                TripDtos.StartTripRequest.builder().busId(99L).routeId(4L).build()));
+        assertThrows(UnauthorizedException.class, () -> service.startTrip("driver@school.com",
+                TripDtos.StartTripRequest.builder().busId(3L).routeId(99L).build()));
+        verify(assignments, never()).save(any());
+        verify(trips, never()).save(any());
+    }
+
+    @Test void startWithoutScheduledDutyNeverAutoAssignsABus() {
+        assertThrows(IllegalStateException.class, () -> service.startTrip("driver@school.com",
+                TripDtos.StartTripRequest.builder().busId(3L).routeId(4L).build()));
+        verify(assignments, never()).save(any());
+        verify(trips, never()).save(any());
+    }
+
+    @Test void repeatedStartReturnsExistingTripAfterLockingAssignedBus() {
+        when(drivers.findByEmailIgnoreCase("driver@school.com")).thenReturn(Optional.of(
+                DriverProfileEntity.builder().id(2L).schoolId("SCH-001").assignedBusId(3L).build()));
+        when(assignments.findFirstByDriverIdAndStatusOrderByIdDesc(2L, "ACTIVE")).thenReturn(Optional.of(
+                BusAssignmentEntity.builder().id(44L).schoolId("SCH-001").driverId(2L).busId(3L).routeId(4L).status("ACTIVE").build()));
+        when(buses.findForDriverAssignment(3L, "SCH-001")).thenReturn(Optional.of(
+                BusEntity.builder().id(3L).status("ACTIVE").build()));
+        when(trips.findFirstByDriverIdAndStatus(2L, "IN_PROGRESS")).thenReturn(Optional.of(trip));
+        assertEquals(10L, service.startTrip("driver@school.com", new TripDtos.StartTripRequest()).getTripId());
+        verify(buses).findForDriverAssignment(3L, "SCH-001");
+        verify(trips, never()).save(any());
+    }
+
 }

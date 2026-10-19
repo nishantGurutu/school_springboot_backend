@@ -1,16 +1,23 @@
 package com.school.management.controller;
-import com.school.management.domain.user.Role;
-import com.school.management.entity.*;
-import com.school.management.repository.*;
-import com.school.management.service.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.school.management.domain.user.Role;
+import com.school.management.entity.OnlineExamAttemptEntity;
+import com.school.management.entity.OnlineExamEntity;
+import com.school.management.entity.StudentEntity;
+import com.school.management.repository.OnlineExamAttemptRepository;
+import com.school.management.repository.OnlineExamRepository;
+import com.school.management.repository.StudentRepository;
+import com.school.management.service.PortalAccessService;
+import com.school.management.service.PortalNotificationService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import java.time.*;
+
+import java.time.Instant;
 import java.util.*;
 
 @RestController @RequestMapping("/api/mobile/online-exams") @RequiredArgsConstructor @Transactional

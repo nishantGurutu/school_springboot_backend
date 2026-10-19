@@ -20,11 +20,17 @@ import java.util.List;
 public class StaffController {
 
     private final StaffService staffService;
+    private final com.school.management.service.DriverBusAllocationService busAllocation;
 
     @GetMapping
     @Operation(summary = "List all staff")
     public ResponseEntity<List<StaffResponse>> getAll() {
         return ResponseEntity.ok(staffService.getAll());
+    }
+
+    @GetMapping("/available-buses")
+    public ResponseEntity<List<com.school.management.dto.transport.BusDto>> availableBuses() {
+        return ResponseEntity.ok(busAllocation.availableBuses("SCH-001"));
     }
 
     @GetMapping("/{id}")

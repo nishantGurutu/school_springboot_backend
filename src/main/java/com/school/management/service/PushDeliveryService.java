@@ -1,11 +1,15 @@
 package com.school.management.service;
-import com.school.management.entity.*;
-import com.school.management.repository.*;
+
+import com.school.management.repository.PortalNotificationRepository;
+import com.school.management.repository.PushDeliveryRepository;
+import com.school.management.repository.PushDeviceRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.*;
-import java.util.*;
+
+import java.time.Instant;
+import java.util.Objects;
+
 @Service @RequiredArgsConstructor
 public class PushDeliveryService {
  private final PushDeliveryRepository deliveries;

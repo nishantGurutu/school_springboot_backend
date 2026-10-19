@@ -1,15 +1,22 @@
 package com.school.management.controller;
+
 import com.school.management.entity.PushDeviceEntity;
 import com.school.management.repository.PushDeviceRepository;
 import com.school.management.service.PortalAccessService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
-import java.security.*;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.Objects;
+
 @RestController @RequestMapping("/api/mobile/push-devices") @RequiredArgsConstructor @Transactional
 public class PushDeviceController {
  private final PushDeviceRepository devices;

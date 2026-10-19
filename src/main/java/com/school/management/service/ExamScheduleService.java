@@ -4,7 +4,6 @@ import com.school.management.dto.ExamScheduleRequest;
 import com.school.management.dto.ExamScheduleResponse;
 import com.school.management.entity.ExamScheduleEntity;
 import com.school.management.exceptions.BadRequestException;
-import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.ExamScheduleRepository;
 import lombok.RequiredArgsConstructor;

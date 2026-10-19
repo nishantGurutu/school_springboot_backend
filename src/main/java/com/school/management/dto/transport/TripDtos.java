@@ -15,6 +15,7 @@ public class TripDtos {
     @AllArgsConstructor
     @Builder
     public static class StartTripRequest {
+        private String driverEmail;
         private Long assignmentId;
         private Long routeId;
         private Long busId;
@@ -51,6 +52,7 @@ public class TripDtos {
     @AllArgsConstructor
     @Builder
     public static class BatchGpsRequest {
+        private String driverEmail;
         @Builder.Default
         private List<GpsPointDto> points = new ArrayList<>();
     }
@@ -90,6 +92,7 @@ public class TripDtos {
     @AllArgsConstructor
     @Builder
     public static class EndTripRequest {
+        private String driverEmail;
         @Builder.Default
         private List<GpsPointDto> points = new ArrayList<>();
         private Double endLatitude;

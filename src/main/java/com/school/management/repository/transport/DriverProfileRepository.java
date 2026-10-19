@@ -9,6 +9,7 @@ import java.util.Optional;
 
 @Repository
 public interface DriverProfileRepository extends JpaRepository<DriverProfileEntity, Long> {
+    List<DriverProfileEntity> findByAssignedBusId(Long busId);
     List<DriverProfileEntity> findBySchoolId(String schoolId);
     Optional<DriverProfileEntity> findByIdAndSchoolId(Long id, String schoolId);
     Optional<DriverProfileEntity> findByEmailIgnoreCase(String email);

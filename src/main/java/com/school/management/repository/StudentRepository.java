@@ -1,7 +1,7 @@
 package com.school.management.repository;
 
-import com.school.management.entity.StudentEntity;
 import com.school.management.domain.student.StudentStatus;
+import com.school.management.entity.StudentEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;

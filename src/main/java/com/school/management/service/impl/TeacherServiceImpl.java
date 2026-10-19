@@ -4,12 +4,10 @@ import com.school.management.domain.teacher.TeacherStatus;
 import com.school.management.domain.user.Role;
 import com.school.management.dto.TeacherRequest;
 import com.school.management.dto.TeacherResponse;
-import com.school.management.entity.TeacherEntity;
-import com.school.management.entity.UserEntity;
+import com.school.management.entity.*;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
-import com.school.management.repository.TeacherRepository;
-import com.school.management.repository.UserRepository;
+import com.school.management.repository.*;
 import com.school.management.service.TeacherService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -17,12 +15,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.school.management.entity.StaffEntity;
-import com.school.management.entity.SchoolClassEntity;
-import com.school.management.entity.SubjectEntity;
-import com.school.management.repository.StaffRepository;
-import com.school.management.repository.SchoolClassRepository;
-import com.school.management.repository.SubjectRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -210,9 +202,10 @@ public class TeacherServiceImpl implements TeacherService {
         // If Driver, also sync DriverProfileEntity so it is immediately registered in Transport Module
         if (targetRole == Role.DRIVER && driverRepository != null) {
             try {
-                if (driverRepository.findByEmailIgnoreCase(teacherEmail).isEmpty()) {
+                java.util.Optional<com.school.management.entity.transport.DriverProfileEntity> existingDriver = driverRepository.findByEmailIgnoreCase(teacherEmail);
+                if (existingDriver.isEmpty()) {
                     driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
-                            .schoolId("SCH001")
+                            .schoolId("SCH-001")
                             .name(teacherFullName)
                             .email(teacherEmail)
                             .phone(saved.getPhone() != null ? saved.getPhone() : "+91 98000 00000")
@@ -227,6 +220,14 @@ public class TeacherServiceImpl implements TeacherService {
                             .emergencyContact(saved.getPhone())
                             .address(saved.getAddress() != null ? saved.getAddress() : "Campus Staff Quarters")
                             .build());
+                } else {
+                    com.school.management.entity.transport.DriverProfileEntity d = existingDriver.get();
+                    d.setSchoolId("SCH-001");
+                    d.setName(teacherFullName);
+                    d.setPhone(saved.getPhone() != null ? saved.getPhone() : d.getPhone());
+                    d.setAvatarUrl(saved.getAvatar() != null ? saved.getAvatar() : d.getAvatarUrl());
+                    d.setStatus("ACTIVE");
+                    driverRepository.save(d);
                 }
             } catch (Exception ignored) {
             }
@@ -410,6 +411,45 @@ public class TeacherServiceImpl implements TeacherService {
             }
         }
 
+        // Sync to DriverProfileEntity if role is DRIVER
+        if (driverRepository != null) {
+            try {
+                if (roleToApply == Role.DRIVER) {
+                    String teacherFullName = (updated.getFirstName() + " " + updated.getLastName()).trim();
+                    java.util.Optional<com.school.management.entity.transport.DriverProfileEntity> existingDriver = driverRepository.findByEmailIgnoreCase(updatedEmail);
+                    if (existingDriver.isPresent()) {
+                        com.school.management.entity.transport.DriverProfileEntity d = existingDriver.get();
+                        d.setSchoolId("SCH-001");
+                        d.setName(teacherFullName);
+                        d.setPhone(updated.getPhone() != null ? updated.getPhone() : d.getPhone());
+                        d.setAvatarUrl(updated.getAvatar() != null ? updated.getAvatar() : d.getAvatarUrl());
+                        d.setStatus("ACTIVE");
+                        driverRepository.save(d);
+                    } else {
+                        driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
+                                .schoolId("SCH-001")
+                                .name(teacherFullName)
+                                .email(updatedEmail)
+                                .phone(updated.getPhone() != null ? updated.getPhone() : "+91 98000 00000")
+                                .licenseNumber("DL-" + (updated.getEmployeeId() != null ? updated.getEmployeeId() : "IND" + (1000 + updated.getId())))
+                                .licenseExpiryDate(java.time.LocalDate.now().plusYears(5))
+                                .licenseCategory("COMMERCIAL_HEAVY")
+                                .experienceYears(updated.getExperienceYears() != null ? updated.getExperienceYears() : 5)
+                                .joiningDate(updated.getJoiningDate() != null ? updated.getJoiningDate() : java.time.LocalDate.now())
+                                .verificationStatus("VERIFIED")
+                                .status("ACTIVE")
+                                .avatarUrl(updated.getAvatar())
+                                .emergencyContact(updated.getPhone())
+                                .address(updated.getAddress() != null ? updated.getAddress() : "Campus Staff Quarters")
+                                .build());
+                    }
+                } else {
+                    driverRepository.findByEmailIgnoreCase(updatedEmail).ifPresent(driverRepository::delete);
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return TeacherResponse.fromEntity(updated);
     }
 
@@ -438,7 +478,14 @@ public class TeacherServiceImpl implements TeacherService {
     public void delete(Long id) {
         TeacherEntity teacher = findByIdOrThrow(id);
         if (teacher.getEmail() != null) {
-            userRepository.findByEmailIgnoreCase(teacher.getEmail()).ifPresent(userRepository::delete);
+            String email = teacher.getEmail().trim();
+            userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
+            if (driverRepository != null) {
+                try {
+                    driverRepository.findByEmailIgnoreCase(email).ifPresent(driverRepository::delete);
+                } catch (Exception ignored) {
+                }
+            }
         }
         teacherRepository.delete(teacher);
     }

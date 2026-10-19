@@ -3,7 +3,6 @@ package com.school.management.service.impl;
 import com.school.management.domain.user.Role;
 import com.school.management.dto.MasterDataResponse;
 import com.school.management.entity.*;
-import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.exceptions.UnauthorizedException;
 import com.school.management.repository.*;
 import com.school.management.service.MasterDataService;

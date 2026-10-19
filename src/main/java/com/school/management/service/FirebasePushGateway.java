@@ -1,15 +1,26 @@
 package com.school.management.service;
-import org.springframework.stereotype.Service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
-import com.fasterxml.jackson.databind.*;
-import java.net.*;
-import java.net.http.*;
-import java.nio.file.*;
+import org.springframework.stereotype.Service;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyFactory;
+import java.security.Signature;
 import java.security.spec.PKCS8EncodedKeySpec;
-import java.time.*;
-import java.util.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.Map;
+
 @Service
 public class FirebasePushGateway {
  private final String credentialsPath;

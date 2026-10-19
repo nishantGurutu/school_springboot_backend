@@ -1,26 +1,25 @@
 package com.school.management.controller;
 
 import com.school.management.domain.user.Role;
+import com.school.management.dto.HolidayResponse;
 import com.school.management.entity.*;
 import com.school.management.exceptions.UnauthorizedException;
 import com.school.management.repository.*;
-import com.school.management.util.SecurityUtil;
-import com.school.management.dto.HolidayResponse;
 import com.school.management.service.HolidayService;
 import com.school.management.service.NoticeService;
+import com.school.management.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/mobile")
@@ -155,10 +154,10 @@ public class MobileAppController {
                 student = studentRepository.findByEmailIgnoreCase(currentUser.getEmail()).orElse(null);
             }
             if (student == null && (isStudent || isParentViewingChild)) {
-                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked");
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Student profile not linked");
             }
             if (isStudent && !currentUser.getEmail().equalsIgnoreCase(student.getEmail())) {
-                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Cannot view another student");
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot view another student");
             }
             if (isParentViewingChild) {
                 String selectedAdmission = student.getAdmissionNo();
@@ -169,7 +168,7 @@ public class MobileAppController {
                     linked = linked || Arrays.stream(parent.getStudentAdmissionNo().split(","))
                             .anyMatch(admission -> selectedAdmission.equalsIgnoreCase(admission.trim()));
                 }
-                if (!linked) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Child is not linked to your account");
+                if (!linked) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Child is not linked to your account");
             }
 
             String studentName = student != null && student.getName() != null ? student.getName() : currentUser.getName();
@@ -820,21 +819,21 @@ public class MobileAppController {
     public ResponseEntity<Map<String, Object>> submitHomework(@PathVariable String id) {
         String cleanId = id.replace("hw_", "");
         UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
-        if (user.getRole() != Role.STUDENT) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Only students can submit homework");
+        if (user.getRole() != Role.STUDENT) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can submit homework");
         StudentEntity student = studentRepository.findByEmailIgnoreCase(user.getEmail())
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student profile not linked"));
         Long homeworkId;
         try { homeworkId = Long.valueOf(cleanId); }
-        catch (NumberFormatException e) { throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid homework ID"); }
+        catch (NumberFormatException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid homework ID"); }
         HomeworkEntity homework = homeworkRepository.findById(homeworkId)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Homework not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Homework not found"));
         if (!assignedTo(homework, student))
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Homework is not assigned to your class");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Homework is not assigned to your class");
         HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findByHomeworkIdAndStudentId(homeworkId, student.getId()).orElseGet(() -> {
             HomeworkSubmissionEntity created = new HomeworkSubmissionEntity();
             created.setHomeworkId(homeworkId);
             created.setStudentId(student.getId());
-            created.setSubmittedAt(java.time.LocalDateTime.now());
+            created.setSubmittedAt(LocalDateTime.now());
             return created;
         });
         submission.setSubmittedAt(LocalDateTime.now());
@@ -1058,7 +1057,7 @@ public class MobileAppController {
             @RequestBody Map<String, Object> req) {
 
         SubjectChapterEntity chapter = subjectChapterRepository.findById(lessonId)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Lesson not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Lesson not found"));
 
         String title = String.valueOf(req.getOrDefault("title", "New Topic"));
         String desc = String.valueOf(req.getOrDefault("description", ""));
@@ -1334,7 +1333,7 @@ public class MobileAppController {
 
         HomeworkEntity hw = managedAssignment(id);
         HomeworkSubmissionEntity submission = homeworkSubmissionRepository.findById(submissionId)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Submission not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Submission not found"));
 
         if (!Objects.equals(submission.getHomeworkId(), hw.getId()))
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Submission does not belong to this assignment");
@@ -1451,15 +1450,15 @@ public class MobileAppController {
         String cleanId = id.replace("hw_", "");
         UserEntity user = securityUtil.getCurrentUser().orElseThrow(() -> new UnauthorizedException("Not authenticated"));
         if (user.getRole() != Role.STUDENT) {
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Only students can submit assignments");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only students can submit assignments");
         }
 
         StudentEntity student = studentRepository.findByEmailIgnoreCase(user.getEmail())
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Student profile not linked"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Student profile not linked"));
 
         Long homeworkId = Long.valueOf(cleanId);
         HomeworkEntity homework = homeworkRepository.findById(homeworkId)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Assignment not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found"));
 
         if (!assignedTo(homework, student)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Assignment is not assigned to you");
         String text = String.valueOf(req.getOrDefault("submissionText", ""));

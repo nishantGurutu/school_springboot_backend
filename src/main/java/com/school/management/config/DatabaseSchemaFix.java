@@ -1,10 +1,10 @@
 package com.school.management.config;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.boot.CommandLineRunner;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -126,6 +126,24 @@ public class DatabaseSchemaFix {
                 jdbcTemplate.execute("ALTER TABLE transport_trips ADD COLUMN IF NOT EXISTS chk_gps_active BOOLEAN DEFAULT TRUE");
             } catch (Exception e) {
                 log.warn("Notice updating transport_trips columns: {}", e.getMessage());
+            }
+
+            // Transport Driver Profile normalization and cleanup of fake/demo records
+            try {
+                jdbcTemplate.execute("UPDATE driver_profiles SET school_id = 'SCH-001' WHERE school_id = 'SCH001' OR school_id IS NULL");
+                jdbcTemplate.execute("UPDATE buses SET school_id = 'SCH-001' WHERE school_id = 'SCH001' OR school_id IS NULL");
+                jdbcTemplate.execute("UPDATE transport_routes SET school_id = 'SCH-001' WHERE school_id = 'SCH001' OR school_id IS NULL");
+                jdbcTemplate.execute("UPDATE bus_assignments SET school_id = 'SCH-001' WHERE school_id = 'SCH001' OR school_id IS NULL");
+
+                // Clean up fake/mock demo drivers (Ramesh Kumar and Suresh Yadav) that are not in staff or teachers
+                jdbcTemplate.execute("DELETE FROM bus_location_history WHERE trip_id IN (SELECT id FROM transport_trips WHERE driver_id IN (SELECT id FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com')))");
+                jdbcTemplate.execute("DELETE FROM trip_stop_events WHERE trip_id IN (SELECT id FROM transport_trips WHERE driver_id IN (SELECT id FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com')))");
+                jdbcTemplate.execute("DELETE FROM transport_alerts WHERE trip_id IN (SELECT id FROM transport_trips WHERE driver_id IN (SELECT id FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com')))");
+                jdbcTemplate.execute("DELETE FROM transport_trips WHERE driver_id IN (SELECT id FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com'))");
+                jdbcTemplate.execute("DELETE FROM bus_assignments WHERE driver_id IN (SELECT id FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com'))");
+                jdbcTemplate.execute("DELETE FROM driver_profiles WHERE email IN ('driver@school.com', 'suresh.driver@school.com')");
+            } catch (Exception e) {
+                log.warn("Notice updating transport driver profiles: {}", e.getMessage());
             }
         };
     }

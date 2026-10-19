@@ -2,18 +2,18 @@ package com.school.management.service.transport.impl;
 
 import com.school.management.domain.user.Role;
 import com.school.management.dto.transport.*;
+import com.school.management.entity.StaffEntity;
 import com.school.management.entity.TeacherEntity;
 import com.school.management.entity.UserEntity;
 import com.school.management.entity.transport.*;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.exceptions.UnauthorizedException;
+import com.school.management.repository.StaffRepository;
+import com.school.management.repository.StudentRepository;
 import com.school.management.repository.TeacherRepository;
 import com.school.management.repository.UserRepository;
-import com.school.management.repository.StudentRepository;
 import com.school.management.repository.transport.*;
 import com.school.management.service.transport.TransportService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +36,7 @@ public class TransportServiceImpl implements TransportService {
     private record LivePosition(String driverEmail, TripDtos.GpsPointDto point, LocalDateTime receivedAt) {}
     private final java.util.concurrent.ConcurrentMap<Long, LivePosition> livePositions = new java.util.concurrent.ConcurrentHashMap<>();
 
+    private final com.school.management.service.DriverBusAllocationService busAllocation;
     private final BusRepository busRepository;
     private final DriverProfileRepository driverRepository;
     private final TransportRouteRepository routeRepository;
@@ -51,10 +52,12 @@ public class TransportServiceImpl implements TransportService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TeacherRepository teacherRepository;
+    private final StaffRepository staffRepository;
     private final TransportFeePaymentRepository feePaymentRepository;
     private final StudentRepository studentRepository;
 
     public TransportServiceImpl(
+            com.school.management.service.DriverBusAllocationService busAllocation,
             BusRepository busRepository,
             DriverProfileRepository driverRepository,
             TransportRouteRepository routeRepository,
@@ -70,9 +73,11 @@ public class TransportServiceImpl implements TransportService {
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             TeacherRepository teacherRepository,
+            StaffRepository staffRepository,
             TransportFeePaymentRepository feePaymentRepository,
             StudentRepository studentRepository
     ) {
+        this.busAllocation = busAllocation;
         this.busRepository = busRepository;
         this.driverRepository = driverRepository;
         this.routeRepository = routeRepository;
@@ -88,6 +93,7 @@ public class TransportServiceImpl implements TransportService {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.teacherRepository = teacherRepository;
+        this.staffRepository = staffRepository;
         this.feePaymentRepository = feePaymentRepository;
         this.studentRepository = studentRepository;
     }
@@ -123,7 +129,10 @@ public class TransportServiceImpl implements TransportService {
 
         long openAlerts = alertRepository.countBySchoolIdAndStatus(sId, "OPEN");
         long totalRoutes = routeRepository.countBySchoolId(sId);
-        long totalDrivers = driverRepository.countBySchoolId(sId);
+        String normSId = sId.replace("-", "").toUpperCase();
+        long totalDrivers = driverRepository.findAll().stream()
+                .filter(d -> isSchoolMatch(d.getSchoolId(), normSId) && !isDemoDriver(d.getEmail()))
+                .count();
         long totalStudents = studentAssignmentRepository.count();
 
         List<TripDtos.LiveTrackingBusDto> liveBuses = getLiveTracking(sId);
@@ -248,6 +257,10 @@ public class TransportServiceImpl implements TransportService {
                 .lastGpsUpdate(bus.getLastGpsUpdate())
                 .build();
 
+        driverRepository.findByAssignedBusId(bus.getId()).stream().findFirst().ifPresent(driver -> {
+            dto.setAssignedDriverId(driver.getId());
+            dto.setAssignedDriverName(driver.getName());
+        });
         assignmentRepository.findByBusIdAndStatus(bus.getId(), "ACTIVE").stream().findFirst().ifPresent(as -> {
             dto.setAssignedDriverId(as.getDriverId());
             driverRepository.findById(as.getDriverId()).ifPresent(d -> dto.setAssignedDriverName(d.getName()));
@@ -267,51 +280,116 @@ public class TransportServiceImpl implements TransportService {
     // DRIVER MANAGEMENT
     // ==========================================
 
+    private boolean isSchoolMatch(String schoolId, String normTarget) {
+        if (schoolId == null || schoolId.isBlank()) return true;
+        return schoolId.replace("-", "").equalsIgnoreCase(normTarget);
+    }
+
+    private boolean isDemoDriver(String email) {
+        if (email == null) return false;
+        String e = email.trim().toLowerCase();
+        return e.equals("driver@school.com") || e.equals("suresh.driver@school.com");
+    }
+
     @Override
     public List<DriverDto> getAllDrivers(String schoolId) {
         String sId = resolveSchool(schoolId);
         seedInitialTransportDataIfEmpty(sId);
         syncDriversFromStaff(sId);
-        return driverRepository.findBySchoolId(sId).stream()
+        String normSId = sId.replace("-", "").toUpperCase();
+        return driverRepository.findAll().stream()
+                .filter(d -> isSchoolMatch(d.getSchoolId(), normSId) && !isDemoDriver(d.getEmail()))
                 .map(this::mapToDriverDto)
                 .collect(Collectors.toList());
     }
 
     private void syncDriversFromStaff(String sId) {
         try {
-            List<TeacherEntity> staffList = teacherRepository.findAll();
-            for (TeacherEntity staff : staffList) {
-                boolean isDriver = (staff.getDesignation() != null && staff.getDesignation().toLowerCase().contains("driver"))
-                        || (staff.getDepartment() != null && staff.getDepartment().toLowerCase().contains("transport"))
-                        || ("Driver".equalsIgnoreCase(staff.getType()));
-                if (isDriver) {
-                    String email = (staff.getEmail() != null && !staff.getEmail().isBlank())
-                            ? staff.getEmail().trim().toLowerCase()
-                            : ("driver." + staff.getEmployeeId() + "@school.com").toLowerCase();
+            // 1. Sync from staffRepository (StaffEntity)
+            if (staffRepository != null) {
+                List<StaffEntity> allStaff = staffRepository.findAll();
+                for (StaffEntity staff : allStaff) {
+                    boolean isDriver = (staff.getRole() != null && staff.getRole().toUpperCase().contains("DRIVER"))
+                            || (staff.getStaffType() != null && staff.getStaffType().toLowerCase().contains("driver"))
+                            || (staff.getDesignation() != null && staff.getDesignation().toLowerCase().contains("driver"));
+                    if (isDriver && staff.getEmail() != null && !staff.getEmail().isBlank()) {
+                        String email = staff.getEmail().trim().toLowerCase();
+                        Optional<DriverProfileEntity> existing = driverRepository.findByEmailIgnoreCase(email);
+                        if (existing.isPresent()) {
+                            DriverProfileEntity d = existing.get();
+                            d.setSchoolId(sId);
+                            d.setName(staff.getName());
+                            if (staff.getPhone() != null && !staff.getPhone().isBlank()) d.setPhone(staff.getPhone());
+                            if (staff.getStatus() != null && !staff.getStatus().isBlank()) d.setStatus(staff.getStatus().toUpperCase());
+                            driverRepository.save(d);
+                        } else {
+                            DriverProfileEntity newDriver = DriverProfileEntity.builder()
+                                    .schoolId(sId)
+                                    .name(staff.getName())
+                                    .email(email)
+                                    .phone(staff.getPhone() != null && !staff.getPhone().isBlank() ? staff.getPhone() : "+91 98000 00000")
+                                    .licenseNumber("DL-IND" + (staff.getId() != null ? (1000 + staff.getId()) : "1001"))
+                                    .licenseExpiryDate(LocalDate.now().plusYears(4))
+                                    .licenseCategory("COMMERCIAL_HEAVY")
+                                    .experienceYears(5)
+                                    .joiningDate(LocalDate.now())
+                                    .verificationStatus("VERIFIED")
+                                    .status(staff.getStatus() != null && !staff.getStatus().isBlank() ? staff.getStatus().toUpperCase() : "ACTIVE")
+                                    .emergencyContact(staff.getPhone())
+                                    .address("Campus Staff Quarters")
+                                    .build();
+                            driverRepository.save(newDriver);
+                            log.info("Auto-synced Staff driver {} into transport driver profiles.", staff.getName());
+                        }
+                    }
+                }
+            }
 
-                    if (driverRepository.findByEmailIgnoreCase(email).isEmpty()) {
+            // 2. Sync from teacherRepository (TeacherEntity)
+            if (teacherRepository != null) {
+                List<TeacherEntity> staffList = teacherRepository.findAll();
+                for (TeacherEntity staff : staffList) {
+                    boolean isDriver = (staff.getDesignation() != null && staff.getDesignation().toLowerCase().contains("driver"))
+                            || (staff.getDepartment() != null && staff.getDepartment().toLowerCase().contains("transport"))
+                            || ("Driver".equalsIgnoreCase(staff.getType()));
+                    if (isDriver) {
+                        String email = (staff.getEmail() != null && !staff.getEmail().isBlank())
+                                ? staff.getEmail().trim().toLowerCase()
+                                : ("driver." + staff.getEmployeeId() + "@school.com").toLowerCase();
+
                         String fullName = ((staff.getFirstName() != null ? staff.getFirstName() : "") + " " +
                                 (staff.getLastName() != null ? staff.getLastName() : "")).trim();
                         if (fullName.isBlank()) fullName = "Staff Driver " + staff.getEmployeeId();
 
-                        DriverProfileEntity newDriver = DriverProfileEntity.builder()
-                                .schoolId(sId)
-                                .name(fullName)
-                                .email(email)
-                                .phone(staff.getPhone() != null ? staff.getPhone() : "+91 98000 00000")
-                                .licenseNumber("DL-" + (staff.getEmployeeId() != null ? staff.getEmployeeId() : "IND" + (1000 + staff.getId())))
-                                .licenseExpiryDate(LocalDate.now().plusYears(4))
-                                .licenseCategory("COMMERCIAL_HEAVY")
-                                .experienceYears(staff.getExperienceYears() != null ? staff.getExperienceYears() : 5)
-                                .joiningDate(staff.getJoiningDate() != null ? staff.getJoiningDate() : LocalDate.now())
-                                .verificationStatus("VERIFIED")
-                                .status("ACTIVE")
-                                .avatarUrl(staff.getAvatar())
-                                .emergencyContact(staff.getPhone())
-                                .address(staff.getAddress() != null ? staff.getAddress() : "Campus Staff Quarters")
-                                .build();
-                        driverRepository.save(newDriver);
-                        log.info("Auto-synced teacher/staff driver {} into transport driver profiles.", fullName);
+                        Optional<DriverProfileEntity> existing = driverRepository.findByEmailIgnoreCase(email);
+                        if (existing.isPresent()) {
+                            DriverProfileEntity d = existing.get();
+                            d.setSchoolId(sId);
+                            d.setName(fullName);
+                            if (staff.getPhone() != null && !staff.getPhone().isBlank()) d.setPhone(staff.getPhone());
+                            if (staff.getAvatar() != null && !staff.getAvatar().isBlank()) d.setAvatarUrl(staff.getAvatar());
+                            if (staff.getStatus() != null) d.setStatus(staff.getStatus().name());
+                            driverRepository.save(d);
+                        } else {
+                            DriverProfileEntity newDriver = DriverProfileEntity.builder()
+                                    .schoolId(sId)
+                                    .name(fullName)
+                                    .email(email)
+                                    .phone(staff.getPhone() != null ? staff.getPhone() : "+91 98000 00000")
+                                    .licenseNumber("DL-" + (staff.getEmployeeId() != null ? staff.getEmployeeId() : "IND" + (1000 + staff.getId())))
+                                    .licenseExpiryDate(LocalDate.now().plusYears(4))
+                                    .licenseCategory("COMMERCIAL_HEAVY")
+                                    .experienceYears(staff.getExperienceYears() != null ? staff.getExperienceYears() : 5)
+                                    .joiningDate(staff.getJoiningDate() != null ? staff.getJoiningDate() : LocalDate.now())
+                                    .verificationStatus("VERIFIED")
+                                    .status("ACTIVE")
+                                    .avatarUrl(staff.getAvatar())
+                                    .emergencyContact(staff.getPhone())
+                                    .address(staff.getAddress() != null ? staff.getAddress() : "Campus Staff Quarters")
+                                    .build();
+                            driverRepository.save(newDriver);
+                            log.info("Auto-synced teacher/staff driver {} into transport driver profiles.", fullName);
+                        }
                     }
                 }
             }
@@ -322,8 +400,7 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public DriverDto getDriverById(Long id, String schoolId) {
-        String sId = resolveSchool(schoolId);
-        DriverProfileEntity driver = driverRepository.findByIdAndSchoolId(id, sId)
+        DriverProfileEntity driver = driverRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Driver not found with id: " + id));
         return mapToDriverDto(driver);
     }
@@ -332,7 +409,7 @@ public class TransportServiceImpl implements TransportService {
     public DriverDailyDetailsDto getDriverDailyDetails(Long id, String schoolId) {
         String sId = resolveSchool(schoolId);
         seedInitialTransportDataIfEmpty(sId);
-        DriverProfileEntity driver = driverRepository.findByIdAndSchoolId(id, sId)
+        DriverProfileEntity driver = driverRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Driver not found with id: " + id));
 
         DriverDto driverDto = mapToDriverDto(driver);
@@ -474,6 +551,10 @@ public class TransportServiceImpl implements TransportService {
                 .dutyStatus("OFF_DUTY")
                 .build();
 
+        dto.setAssignedBusId(driver.getAssignedBusId());
+        if (driver.getAssignedBusId() != null) {
+            busRepository.findById(driver.getAssignedBusId()).ifPresent(bus -> dto.setAssignedBusNumber(bus.getBusNumber()));
+        }
         assignmentRepository.findFirstByDriverIdAndStatusOrderByIdDesc(driver.getId(), "ACTIVE").ifPresent(as -> {
             dto.setAssignedBusId(as.getBusId());
             busRepository.findById(as.getBusId()).ifPresent(b -> dto.setAssignedBusNumber(b.getBusNumber()));
@@ -690,6 +771,16 @@ public class TransportServiceImpl implements TransportService {
     public BusAssignmentDto createAssignment(BusAssignmentDto dto, String schoolId) {
         String sId = resolveSchool(schoolId);
 
+        DriverProfileEntity selectedDriver = driverRepository.findByIdAndSchoolId(dto.getDriverId(), sId)
+                .orElseThrow(() -> new ResourceNotFoundException("Driver not found"));
+        busAllocation.assign(selectedDriver, dto.getBusId());
+
+        routeRepository.findByIdAndSchoolId(dto.getRouteId(), sId)
+                .orElseThrow(() -> new ResourceNotFoundException("Route not found in this school"));
+        if (tripRepository.findFirstByDriverIdAndStatus(dto.getDriverId(), "IN_PROGRESS").isPresent()) {
+            throw new IllegalStateException("End the active trip before changing the driver's duty");
+        }
+
         // Conflict check: driver or bus active on overlapping period
         List<BusAssignmentEntity> existingDriverAssignments = assignmentRepository.findByDriverIdAndStatus(dto.getDriverId(), "ACTIVE");
         if (!existingDriverAssignments.isEmpty()) {
@@ -730,6 +821,13 @@ public class TransportServiceImpl implements TransportService {
         BusAssignmentEntity as = assignmentRepository.findByIdAndSchoolId(id, sId)
                 .orElseThrow(() -> new ResourceNotFoundException("Assignment not found with id: " + id));
 
+        if ("ACTIVE".equalsIgnoreCase(dto.getStatus() != null ? dto.getStatus() : as.getStatus())) {
+            Long driverId = dto.getDriverId() != null ? dto.getDriverId() : as.getDriverId();
+            Long busId = dto.getBusId() != null ? dto.getBusId() : as.getBusId();
+            var driver = driverRepository.findByIdAndSchoolId(driverId, sId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Driver not found"));
+            busAllocation.assign(driver, busId);
+        }
         if (dto.getDriverId() != null) as.setDriverId(dto.getDriverId());
         if (dto.getBusId() != null) as.setBusId(dto.getBusId());
         if (dto.getRouteId() != null) as.setRouteId(dto.getRouteId());
@@ -1044,82 +1142,12 @@ public class TransportServiceImpl implements TransportService {
     // DRIVER APP CORE OPERATIONS
     // ==========================================
 
-    private DriverProfileEntity resolveDriver(String driverEmail) {
-        if (driverEmail != null && !driverEmail.isBlank()) {
-            String cleanEmail = driverEmail.trim();
-            Optional<DriverProfileEntity> byEmail = driverRepository.findByEmailIgnoreCase(cleanEmail);
-            if (byEmail.isPresent()) return byEmail.get();
-
-            Optional<UserEntity> userOpt = userRepository.findByEmailIgnoreCase(cleanEmail);
-            if (userOpt.isPresent()) {
-                UserEntity user = userOpt.get();
-                List<BusEntity> allBuses = busRepository.findAll();
-                Long busId = allBuses.isEmpty() ? null : allBuses.get(0).getId();
-                DriverProfileEntity newDriver = DriverProfileEntity.builder()
-                        .schoolId(DEFAULT_SCHOOL_ID)
-                        .userId(user.getId())
-                        .name(user.getName() != null && !user.getName().isBlank() ? user.getName() : "Driver")
-                        .email(user.getEmail())
-                        .phone("+91 98765 43210")
-                        .licenseNumber("DL-" + Math.abs(user.getEmail().hashCode() % 90000000 + 10000000))
-                        .licenseExpiryDate(LocalDate.now().plusYears(4))
-                        .licenseCategory("COMMERCIAL_HEAVY")
-                        .experienceYears(6)
-                        .joiningDate(LocalDate.now().minusYears(1))
-                        .verificationStatus("VERIFIED")
-                        .status("ACTIVE")
-                        .address("Campus Staff Quarters, Patna")
-                        .assignedBusId(busId)
-                        .build();
-                return driverRepository.save(newDriver);
-            }
-        }
-        Optional<DriverProfileEntity> defaultDriver = driverRepository.findByEmailIgnoreCase("driver@school.com");
-        if (defaultDriver.isPresent()) return defaultDriver.get();
-
-        List<DriverProfileEntity> all = driverRepository.findBySchoolId("SCH-001");
-        if (!all.isEmpty()) return all.get(0);
-
-        List<DriverProfileEntity> any = driverRepository.findAll();
-        if (!any.isEmpty()) return any.get(0);
-
-        seedInitialTransportDataIfEmpty("SCH-001");
-        return driverRepository.findByEmailIgnoreCase("driver@school.com")
-                .orElseThrow(() -> new ResourceNotFoundException("No driver found"));
-    }
-
     @Override
     public TripDtos.DriverDutyDto getDriverDuty(String driverEmail) {
-        DriverProfileEntity driver = resolveDriver(driverEmail);
-        seedInitialTransportDataIfEmpty(driver.getSchoolId());
+        DriverProfileEntity driver = requireTrackingDriver(driverEmail);
 
         BusAssignmentEntity assignment = assignmentRepository.findFirstByDriverIdAndStatusOrderByIdDesc(driver.getId(), "ACTIVE")
                 .orElse(null);
-
-        if (assignment == null) {
-            // Auto-assign first available bus and route to guarantee dynamic duty data
-            List<TransportRouteEntity> routes = routeRepository.findBySchoolId(driver.getSchoolId());
-            if (routes.isEmpty()) routes = routeRepository.findBySchoolId(DEFAULT_SCHOOL_ID);
-            if (routes.isEmpty()) routes = routeRepository.findAll();
-
-            List<BusEntity> buses = busRepository.findBySchoolId(driver.getSchoolId());
-            if (buses.isEmpty()) buses = busRepository.findBySchoolId(DEFAULT_SCHOOL_ID);
-            if (buses.isEmpty()) buses = busRepository.findAll();
-
-            if (!routes.isEmpty() && !buses.isEmpty()) {
-                BusAssignmentEntity autoAssignment = BusAssignmentEntity.builder()
-                        .schoolId(driver.getSchoolId() != null ? driver.getSchoolId() : DEFAULT_SCHOOL_ID)
-                        .driverId(driver.getId())
-                        .routeId(routes.get(0).getId())
-                        .busId(buses.get(0).getId())
-                        .shift("BOTH")
-                        .effectiveStartDate(LocalDate.now())
-                        .status("ACTIVE")
-                        .notes("Daily scheduled bus assignment")
-                        .build();
-                assignment = assignmentRepository.save(autoAssignment);
-            }
-        }
 
         TripDtos.DriverDutyDto.DriverDutyDtoBuilder dutyBuilder = TripDtos.DriverDutyDto.builder()
                 .driverId(driver.getId())
@@ -1129,6 +1157,10 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(driver.getLicenseExpiryDate() != null ? driver.getLicenseExpiryDate().toString() : "2029-06-30")
                 .tripStatus("NONE");
 
+        if (assignment == null && driver.getAssignedBusId() != null) {
+            busRepository.findById(driver.getAssignedBusId()).ifPresent(bus -> dutyBuilder
+                    .busId(bus.getId()).busNumber(bus.getBusNumber()).registrationNumber(bus.getRegistrationNumber()).busCapacity(bus.getCapacity()));
+        }
         if (assignment != null) {
             dutyBuilder.assignmentId(assignment.getId())
                     .busId(assignment.getBusId())
@@ -1176,18 +1208,17 @@ public class TransportServiceImpl implements TransportService {
                     }
                 });
 
+        tripRepository.findFirstByDriverIdAndStatus(driver.getId(), "IN_PROGRESS").ifPresent(trip -> {
+            dutyBuilder.activeTripId(trip.getId()).tripStatus("IN_PROGRESS")
+                    .busId(trip.getBusId()).routeId(trip.getRouteId())
+                    .activeTrip(mapToTripSummaryDto(trip));
+        });
         return dutyBuilder.build();
     }
 
     @Override
     public TripDtos.TripSummaryDto startTrip(String driverEmail, TripDtos.StartTripRequest request) {
         DriverProfileEntity driver = requireTrackingDriver(driverEmail);
-
-        // Idempotency: check if driver already has an in-progress trip
-        Optional<TransportTripEntity> existingActive = tripRepository.findFirstByDriverIdAndStatus(driver.getId(), "IN_PROGRESS");
-        if (existingActive.isPresent()) {
-            return mapToTripSummaryDto(existingActive.get());
-        }
 
         BusAssignmentEntity assignment = null;
         if (request.getAssignmentId() != null) {
@@ -1198,15 +1229,31 @@ public class TransportServiceImpl implements TransportService {
                     .orElse(null);
         }
         if (assignment == null) {
-            throw new IllegalStateException("No active trip duty is assigned to this driver");
+            throw new IllegalStateException("No active route duty is assigned. Ask the school to schedule your assigned bus.");
         }
-        if (!Objects.equals(assignment.getDriverId(), driver.getId()) || !"ACTIVE".equals(assignment.getStatus())) {
+        if (!Objects.equals(assignment.getDriverId(), driver.getId())
+                || !Objects.equals(assignment.getSchoolId(), driver.getSchoolId())
+                || !"ACTIVE".equals(assignment.getStatus())) {
             throw new UnauthorizedException("Only the assigned driver can start this trip");
         }
-        if ((request.getRouteId() != null && !Objects.equals(request.getRouteId(), assignment.getRouteId()))
-                || (request.getBusId() != null && !Objects.equals(request.getBusId(), assignment.getBusId()))) {
-            throw new UnauthorizedException("Trip bus and route must match the driver's assigned duty");
+        if ((request.getBusId() != null && !Objects.equals(request.getBusId(), assignment.getBusId()))
+                || (request.getRouteId() != null && !Objects.equals(request.getRouteId(), assignment.getRouteId()))
+                || (driver.getAssignedBusId() != null && !Objects.equals(driver.getAssignedBusId(), assignment.getBusId()))) {
+            throw new UnauthorizedException("Start only the bus and route assigned by the school");
         }
+        BusEntity assignedBus = busRepository.findForDriverAssignment(assignment.getBusId(), driver.getSchoolId())
+                .orElseThrow(() -> new ResourceNotFoundException("Assigned bus not found"));
+        if (!"ACTIVE".equals(assignedBus.getStatus())) {
+            throw new IllegalStateException("Assigned bus is unavailable");
+        }
+        // Serialize starts for this bus before checking for an existing trip.
+        Optional<TransportTripEntity> existingActive = tripRepository.findFirstByDriverIdAndStatus(driver.getId(), "IN_PROGRESS");
+        if (existingActive.isPresent()) return mapToTripSummaryDto(existingActive.get());
+        if (tripRepository.findFirstByBusIdAndStatus(assignment.getBusId(), "IN_PROGRESS").isPresent()) {
+            throw new IllegalStateException("This bus already has an active trip");
+        }
+        routeRepository.findByIdAndSchoolId(assignment.getRouteId(), driver.getSchoolId())
+                .orElseThrow(() -> new ResourceNotFoundException("Assigned route not found"));
         Long routeId = assignment.getRouteId();
         Long busId = assignment.getBusId();
 
@@ -1262,7 +1309,7 @@ public class TransportServiceImpl implements TransportService {
                 .latitude(saved.getLastLatitude())
                 .longitude(saved.getLastLongitude())
                 .speedKmh(0.0)
-                .recordedAt(LocalDateTime.now())
+                .recordedAt(LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .serverReceivedAt(LocalDateTime.now())
                 .build();
         locationHistoryRepository.save(firstLoc);
@@ -1281,9 +1328,34 @@ public class TransportServiceImpl implements TransportService {
     }
 
     private DriverProfileEntity requireTrackingDriver(String email) {
-        if (email == null || email.isBlank()) throw new UnauthorizedException("Driver authentication required");
-        return driverRepository.findByEmailIgnoreCase(email.trim())
-                .orElseThrow(() -> new UnauthorizedException("A registered driver is required"));
+        if (email == null || email.isBlank()) {
+            throw new UnauthorizedException("Driver authentication required");
+        }
+        String cleanEmail = email.trim();
+        Optional<DriverProfileEntity> byEmail = driverRepository.findByEmailIgnoreCase(cleanEmail);
+        if (byEmail.isPresent()) return byEmail.get();
+
+        Optional<UserEntity> userOpt = userRepository.findByEmailIgnoreCase(cleanEmail);
+        if (userOpt.isPresent() && userOpt.get().getRole() == com.school.management.domain.user.Role.DRIVER) {
+            UserEntity user = userOpt.get();
+            DriverProfileEntity newDriver = DriverProfileEntity.builder()
+                    .schoolId(DEFAULT_SCHOOL_ID)
+                    .userId(user.getId())
+                    .name(user.getName() != null && !user.getName().isBlank() ? user.getName() : "Driver")
+                    .email(user.getEmail())
+                    .phone("+91 98765 43210")
+                    .licenseNumber("DL-" + Math.abs(user.getEmail().hashCode() % 90000000 + 10000000))
+                    .licenseExpiryDate(LocalDate.now().plusYears(4))
+                    .licenseCategory("COMMERCIAL_HEAVY")
+                    .experienceYears(6)
+                    .joiningDate(LocalDate.now().minusYears(1))
+                    .verificationStatus("VERIFIED")
+                    .status("ACTIVE")
+                    .address("Campus Staff Quarters, Patna")
+                    .build();
+            return driverRepository.save(newDriver);
+        }
+        throw new UnauthorizedException("A registered driver is required");
     }
 
     private void validateGpsPoint(TripDtos.GpsPointDto point) {
@@ -1640,6 +1712,10 @@ public class TransportServiceImpl implements TransportService {
         TransportTripEntity trip = tripRepository.findById(tripId)
                 .orElseThrow(() -> new ResourceNotFoundException("Trip not found"));
 
+        if (!Objects.equals(trip.getSchoolId(), resolveSchool(schoolId))) {
+            throw new ResourceNotFoundException("Trip not found in this school");
+        }
+
         BusEntity bus = busRepository.findById(trip.getBusId()).orElse(null);
         DriverProfileEntity driver = driverRepository.findById(trip.getDriverId()).orElse(null);
         TransportRouteEntity route = routeRepository.findById(trip.getRouteId()).orElse(null);
@@ -1722,7 +1798,7 @@ public class TransportServiceImpl implements TransportService {
                 .filter(t -> date == null || date.equals(t.getTripDate()))
                 .filter(t -> busId == null || busId.equals(t.getBusId()))
                 .filter(t -> driverId == null || driverId.equals(t.getDriverId()))
-                .sorted(Comparator.comparing(TransportTripEntity::getTripDate).reversed().thenComparing(TransportTripEntity::getId).reversed())
+                .sorted(Comparator.comparing(TransportTripEntity::getTripDate).thenComparing(TransportTripEntity::getId).reversed())
                 .map(this::mapToTripSummaryDto)
                 .collect(Collectors.toList());
     }

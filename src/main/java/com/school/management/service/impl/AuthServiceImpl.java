@@ -276,7 +276,7 @@ public class AuthServiceImpl implements AuthService {
                 String phone = staffOpt.map(StaffEntity::getPhone)
                         .orElseGet(() -> teacherOpt.map(TeacherEntity::getPhone).orElse("+91 98000 00000"));
                 driverRepository.save(com.school.management.entity.transport.DriverProfileEntity.builder()
-                        .schoolId("SCH001")
+                        .schoolId("SCH-001")
                         .name(user.getName())
                         .email(user.getEmail())
                         .phone(phone != null && !phone.isBlank() ? phone : "+91 98000 00000")

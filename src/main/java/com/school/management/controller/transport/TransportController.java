@@ -271,21 +271,24 @@ public class TransportController {
     public ResponseEntity<TripDtos.DriverDutyDto> getMyDuty(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email) {
-        String driverEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String driverEmail = trackingDriverEmail(userDetails, email);
         return ResponseEntity.ok(transportService.getDriverDuty(driverEmail));
     }
 
-    private String trackingDriverEmail(UserDetails userDetails) {
-        if (userDetails == null) throw new com.school.management.exceptions.UnauthorizedException("Driver authentication required");
-        return userDetails.getUsername();
+    private String trackingDriverEmail(UserDetails userDetails, String emailParam) {
+        if (userDetails != null && userDetails.getUsername() != null && !userDetails.getUsername().isBlank()) {
+            return userDetails.getUsername();
+        }
+        throw new com.school.management.exceptions.UnauthorizedException("Sign in as the assigned driver to manage trips");
     }
 
     @PostMapping("/trips/{tripId}/locations/live")
     public ResponseEntity<Map<String, Object>> publishLiveLocation(
             @PathVariable Long tripId,
             @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(required = false) String email,
             @RequestBody TripDtos.GpsPointDto point) {
-        transportService.publishLiveLocation(tripId, trackingDriverEmail(userDetails), point);
+        transportService.publishLiveLocation(tripId, trackingDriverEmail(userDetails, email), point);
         return ResponseEntity.ok(Map.of("success", true));
     }
 
@@ -294,7 +297,12 @@ public class TransportController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.StartTripRequest request) {
-        String driverEmail = trackingDriverEmail(userDetails);
+        String resolvedEmail = (email != null && !email.isBlank())
+                ? email
+                : (request != null && request.getDriverEmail() != null && !request.getDriverEmail().isBlank())
+                    ? request.getDriverEmail()
+                    : null;
+        String driverEmail = trackingDriverEmail(userDetails, resolvedEmail);
         return ResponseEntity.ok(transportService.startTrip(driverEmail, request));
     }
 
@@ -304,7 +312,12 @@ public class TransportController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.BatchGpsRequest request) {
-        String driverEmail = trackingDriverEmail(userDetails);
+        String resolvedEmail = (email != null && !email.isBlank())
+                ? email
+                : (request != null && request.getDriverEmail() != null && !request.getDriverEmail().isBlank())
+                    ? request.getDriverEmail()
+                    : null;
+        String driverEmail = trackingDriverEmail(userDetails, resolvedEmail);
         int saved = transportService.ingestGpsBatch(tripId, driverEmail, request);
         return ResponseEntity.ok(Map.of("success", true, "pointsProcessed", saved));
     }
@@ -336,7 +349,12 @@ public class TransportController {
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email,
             @RequestBody TripDtos.EndTripRequest request) {
-        String driverEmail = trackingDriverEmail(userDetails);
+        String resolvedEmail = (email != null && !email.isBlank())
+                ? email
+                : (request != null && request.getDriverEmail() != null && !request.getDriverEmail().isBlank())
+                    ? request.getDriverEmail()
+                    : null;
+        String driverEmail = trackingDriverEmail(userDetails, resolvedEmail);
         return ResponseEntity.ok(transportService.endTrip(tripId, driverEmail, request));
     }
 

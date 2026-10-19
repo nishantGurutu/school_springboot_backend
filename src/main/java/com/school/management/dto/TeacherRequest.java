@@ -2,11 +2,7 @@ package com.school.management.dto;
 
 import com.school.management.domain.teacher.JobType;
 import com.school.management.domain.teacher.TeacherStatus;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 
 import java.time.LocalDate;

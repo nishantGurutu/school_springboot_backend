@@ -1,16 +1,24 @@
 package com.school.management.service;
-import com.school.management.entity.*;
-import com.school.management.repository.*;
-import com.school.management.domain.user.Role;
+
 import com.fasterxml.jackson.databind.JsonNode;
+import com.school.management.domain.user.Role;
+import com.school.management.entity.FeeCollectionEntity;
+import com.school.management.entity.FeePaymentEntity;
+import com.school.management.entity.StudentEntity;
+import com.school.management.repository.FeeCollectionRepository;
+import com.school.management.repository.FeePaymentRepository;
+import com.school.management.repository.StudentRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.http.HttpStatus;
-import java.math.*;
-import java.time.*;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
+
 @Service @RequiredArgsConstructor @Transactional
 public class FeePaymentService {
  private final jakarta.persistence.EntityManager entityManager;

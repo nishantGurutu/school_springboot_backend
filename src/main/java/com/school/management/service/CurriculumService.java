@@ -3,7 +3,6 @@ package com.school.management.service;
 import com.school.management.entity.*;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.*;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

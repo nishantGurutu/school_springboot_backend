@@ -18,4 +18,5 @@ public class StaffRequest {
     private String status;
     private String password;
     private String role;
+    private Long busId;
 }
