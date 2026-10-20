@@ -6,6 +6,8 @@ import com.school.management.entity.StaffEntity;
 import com.school.management.entity.TeacherEntity;
 import com.school.management.entity.UserEntity;
 import com.school.management.entity.transport.*;
+import com.school.management.exceptions.BadRequestException;
+import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.exceptions.UnauthorizedException;
 import com.school.management.repository.StaffRepository;
@@ -181,20 +183,31 @@ public class TransportServiceImpl implements TransportService {
     @Override
     public BusDto createBus(BusDto dto, String schoolId) {
         String sId = resolveSchool(schoolId);
+        if (dto.getBusNumber() == null || dto.getBusNumber().trim().isEmpty()) {
+            throw new BadRequestException("Bus number is required");
+        }
+        if (dto.getRegistrationNumber() == null || dto.getRegistrationNumber().trim().isEmpty()) {
+            throw new BadRequestException("Registration number is required");
+        }
+        String regNum = dto.getRegistrationNumber().trim().toUpperCase();
+        if (busRepository.findByRegistrationNumberIgnoreCase(regNum).isPresent()) {
+            throw new DuplicateResourceException("Bus with registration number " + regNum + " already exists");
+        }
+
         BusEntity entity = BusEntity.builder()
                 .schoolId(sId)
-                .busNumber(dto.getBusNumber())
-                .registrationNumber(dto.getRegistrationNumber().trim().toUpperCase())
-                .capacity(dto.getCapacity() != null ? dto.getCapacity() : 40)
-                .model(dto.getModel())
-                .manufacturer(dto.getManufacturer())
-                .fuelType(dto.getFuelType() != null ? dto.getFuelType() : "DIESEL")
-                .gpsDeviceId(dto.getGpsDeviceId())
+                .busNumber(dto.getBusNumber().trim())
+                .registrationNumber(regNum)
+                .capacity(dto.getCapacity() != null && dto.getCapacity() > 0 ? dto.getCapacity() : 40)
+                .model(dto.getModel() != null && !dto.getModel().trim().isEmpty() ? dto.getModel().trim() : null)
+                .manufacturer(dto.getManufacturer() != null && !dto.getManufacturer().trim().isEmpty() ? dto.getManufacturer().trim() : null)
+                .fuelType(dto.getFuelType() != null && !dto.getFuelType().trim().isEmpty() ? dto.getFuelType() : "DIESEL")
+                .gpsDeviceId(dto.getGpsDeviceId() != null && !dto.getGpsDeviceId().trim().isEmpty() ? dto.getGpsDeviceId().trim() : null)
                 .insuranceExpiryDate(dto.getInsuranceExpiryDate())
                 .fitnessExpiryDate(dto.getFitnessExpiryDate())
                 .pollutionExpiryDate(dto.getPollutionExpiryDate())
                 .permitExpiryDate(dto.getPermitExpiryDate())
-                .status(dto.getStatus() != null ? dto.getStatus() : "ACTIVE")
+                .status(dto.getStatus() != null && !dto.getStatus().trim().isEmpty() ? dto.getStatus() : "ACTIVE")
                 .build();
 
         BusEntity saved = busRepository.save(entity);
@@ -208,18 +221,27 @@ public class TransportServiceImpl implements TransportService {
         BusEntity bus = busRepository.findByIdAndSchoolId(id, sId)
                 .orElseThrow(() -> new ResourceNotFoundException("Bus not found with id: " + id));
 
-        if (dto.getBusNumber() != null) bus.setBusNumber(dto.getBusNumber());
-        if (dto.getRegistrationNumber() != null) bus.setRegistrationNumber(dto.getRegistrationNumber().trim().toUpperCase());
-        if (dto.getCapacity() != null) bus.setCapacity(dto.getCapacity());
-        if (dto.getModel() != null) bus.setModel(dto.getModel());
-        if (dto.getManufacturer() != null) bus.setManufacturer(dto.getManufacturer());
-        if (dto.getFuelType() != null) bus.setFuelType(dto.getFuelType());
-        if (dto.getGpsDeviceId() != null) bus.setGpsDeviceId(dto.getGpsDeviceId());
-        if (dto.getInsuranceExpiryDate() != null) bus.setInsuranceExpiryDate(dto.getInsuranceExpiryDate());
-        if (dto.getFitnessExpiryDate() != null) bus.setFitnessExpiryDate(dto.getFitnessExpiryDate());
-        if (dto.getPollutionExpiryDate() != null) bus.setPollutionExpiryDate(dto.getPollutionExpiryDate());
-        if (dto.getPermitExpiryDate() != null) bus.setPermitExpiryDate(dto.getPermitExpiryDate());
-        if (dto.getStatus() != null) bus.setStatus(dto.getStatus());
+        if (dto.getBusNumber() != null && !dto.getBusNumber().trim().isEmpty()) {
+            bus.setBusNumber(dto.getBusNumber().trim());
+        }
+        if (dto.getRegistrationNumber() != null && !dto.getRegistrationNumber().trim().isEmpty()) {
+            String regNum = dto.getRegistrationNumber().trim().toUpperCase();
+            Optional<BusEntity> existing = busRepository.findByRegistrationNumberIgnoreCase(regNum);
+            if (existing.isPresent() && !existing.get().getId().equals(id)) {
+                throw new DuplicateResourceException("Bus with registration number " + regNum + " already exists");
+            }
+            bus.setRegistrationNumber(regNum);
+        }
+        if (dto.getCapacity() != null && dto.getCapacity() > 0) bus.setCapacity(dto.getCapacity());
+        if (dto.getModel() != null) bus.setModel(dto.getModel().trim().isEmpty() ? null : dto.getModel().trim());
+        if (dto.getManufacturer() != null) bus.setManufacturer(dto.getManufacturer().trim().isEmpty() ? null : dto.getManufacturer().trim());
+        if (dto.getFuelType() != null && !dto.getFuelType().trim().isEmpty()) bus.setFuelType(dto.getFuelType());
+        if (dto.getGpsDeviceId() != null) bus.setGpsDeviceId(dto.getGpsDeviceId().trim().isEmpty() ? null : dto.getGpsDeviceId().trim());
+        bus.setInsuranceExpiryDate(dto.getInsuranceExpiryDate());
+        bus.setFitnessExpiryDate(dto.getFitnessExpiryDate());
+        bus.setPollutionExpiryDate(dto.getPollutionExpiryDate());
+        bus.setPermitExpiryDate(dto.getPermitExpiryDate());
+        if (dto.getStatus() != null && !dto.getStatus().trim().isEmpty()) bus.setStatus(dto.getStatus());
 
         BusEntity updated = busRepository.save(bus);
         logAudit(sId, "BUS_UPDATED", "BUS", updated.getId(), "Updated bus: " + updated.getBusNumber());
@@ -231,6 +253,16 @@ public class TransportServiceImpl implements TransportService {
         String sId = resolveSchool(schoolId);
         BusEntity bus = busRepository.findByIdAndSchoolId(id, sId)
                 .orElseThrow(() -> new ResourceNotFoundException("Bus not found with id: " + id));
+
+        // Clean up assignments if any
+        assignmentRepository.findByBusIdAndStatus(id, "ACTIVE").forEach(assignmentRepository::delete);
+
+        // Clean up driver profile assignedBusId if any
+        driverRepository.findByAssignedBusId(id).forEach(driver -> {
+            driver.setAssignedBusId(null);
+            driverRepository.save(driver);
+        });
+
         busRepository.delete(bus);
         logAudit(sId, "BUS_DELETED", "BUS", id, "Deleted bus: " + bus.getBusNumber());
     }

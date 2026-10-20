@@ -2,6 +2,7 @@ package com.school.management.service;
 
 import com.school.management.dto.StaffRequest;
 import com.school.management.dto.transport.BusAssignmentDto;
+import com.school.management.dto.transport.BusDto;
 import com.school.management.dto.transport.TripDtos;
 import com.school.management.entity.transport.BusEntity;
 import com.school.management.entity.transport.TransportRouteEntity;
@@ -92,6 +93,36 @@ class TransportDriverFlowTest {
         request.setEmail("staff-second-driver@test.local");
         assertThrows(com.school.management.exceptions.BadRequestException.class, () -> teachers.create(request));
 
+    }
+
+    @Test void testCreateUpdateDeleteBus() {
+        var createDto = BusDto.builder()
+                .busNumber("Bus 99")
+                .registrationNumber("MH-99-TEST-99")
+                .capacity(45)
+                .fuelType("DIESEL")
+                .model("Tata Starbus")
+                .build();
+        var created = transport.createBus(createDto, "SCH-001");
+        assertNotNull(created.getId());
+        assertEquals("Bus 99", created.getBusNumber());
+        assertEquals("MH-99-TEST-99", created.getRegistrationNumber());
+
+        // Duplicate test
+        assertThrows(com.school.management.exceptions.DuplicateResourceException.class,
+                () -> transport.createBus(createDto, "SCH-001"));
+
+        // Update test
+        created.setBusNumber("Bus 99 Updated");
+        created.setCapacity(50);
+        var updated = transport.updateBus(created.getId(), created, "SCH-001");
+        assertEquals("Bus 99 Updated", updated.getBusNumber());
+        assertEquals(50, updated.getCapacity());
+
+        // Delete test
+        transport.deleteBus(created.getId(), "SCH-001");
+        assertThrows(com.school.management.exceptions.ResourceNotFoundException.class,
+                () -> transport.getBusById(created.getId(), "SCH-001"));
     }
 
 }
