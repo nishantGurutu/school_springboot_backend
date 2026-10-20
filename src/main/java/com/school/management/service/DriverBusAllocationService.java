@@ -28,7 +28,7 @@ public class DriverBusAllocationService {
         return buses.findAvailableForDriver(schoolId).stream().map(bus -> BusDto.builder()
                 .id(bus.getId()).schoolId(bus.getSchoolId()).busNumber(bus.getBusNumber())
                 .registrationNumber(bus.getRegistrationNumber()).capacity(bus.getCapacity())
-                .status(bus.getStatus()).build()).toList();
+                .status(bus.getStatus()).assignmentStatus("AVAILABLE").availableForAssignment(true).build()).toList();
     }
 
     /** All allocation writers lock the bus, so two staff forms cannot reserve it. */
@@ -52,6 +52,6 @@ public class DriverBusAllocationService {
             throw new BadRequestException("End the driver's current trip and remove the existing duty before changing buses");
         }
         driver.setAssignedBusId(busId);
-        drivers.save(driver);
+        drivers.saveAndFlush(driver);
     }
 }

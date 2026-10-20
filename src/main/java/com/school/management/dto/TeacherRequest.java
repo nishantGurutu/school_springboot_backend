@@ -80,6 +80,7 @@ public class TeacherRequest {
     private String type; // Teacher, Principal, Staff, Accountant, Librarian, Driver
     private String userType;
     private String role;
+    private Long busId;
 
     // Form fields
     private String gender;

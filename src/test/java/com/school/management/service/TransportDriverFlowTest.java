@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @Transactional
 class TransportDriverFlowTest {
     @Autowired StaffService staff;
+    @Autowired TeacherService teachers;
     @Autowired DriverBusAllocationService allocations;
     @Autowired TransportService transport;
     @Autowired BusRepository buses;
@@ -64,4 +65,33 @@ class TransportDriverFlowTest {
         assertNull(transport.getDriverDuty(request.getEmail()).getActiveTripId());
         assertEquals(3, history.findByTripIdOrderByRecordedAtAsc(trip.getTripId()).size());
     }
+    @Test void addNewStaffPageCreatesDriverWithSelectedBus() {
+        var bus = buses.saveAndFlush(BusEntity.builder().busNumber("Staff Page Bus").registrationNumber("FLOW-STAFF-PAGE-01").capacity(30).build());
+        var availableBus = transport.getAllBuses("SCH-001").stream().filter(b -> b.getId().equals(bus.getId())).findFirst().orElseThrow();
+        assertEquals("AVAILABLE", availableBus.getAssignmentStatus());
+        assertTrue(availableBus.getAvailableForAssignment());
+        var request = new com.school.management.dto.TeacherRequest();
+        request.setEmployeeId("STAFF-DRIVER-FLOW"); request.setFirstName("Page"); request.setLastName("Driver");
+        request.setRole("DRIVER"); request.setUserType("DRIVER"); request.setType("Driver");
+        request.setDepartment("Transport"); request.setDesignation("Driver");
+        request.setEmail("staff-page-driver@test.local"); request.setPhone("9876543210");
+        request.setPassword("Flow-test-password-123"); request.setJoiningDate(java.time.LocalDate.now());
+        request.setBusId(bus.getId());
+        var created = teachers.create(request);
+        entityManager.flush(); entityManager.clear();
+        assertNotNull(created.getId());
+        assertEquals(bus.getId(), created.getBusId());
+        assertEquals(bus.getId(), teachers.getById(created.getId()).getBusId());
+        var assignedBus = transport.getAllBuses("SCH-001").stream().filter(b -> b.getId().equals(bus.getId())).findFirst().orElseThrow();
+        assertEquals("ASSIGNED", assignedBus.getAssignmentStatus());
+        assertFalse(assignedBus.getAvailableForAssignment());
+        assertNotNull(assignedBus.getAssignedDriverId());
+        assertEquals(bus.getId(), transport.getDriverDuty(request.getEmail()).getBusId());
+        assertFalse(allocations.availableBuses("SCH-001").stream().anyMatch(b -> b.getId().equals(bus.getId())));
+        request.setEmployeeId("STAFF-SECOND-DRIVER");
+        request.setEmail("staff-second-driver@test.local");
+        assertThrows(com.school.management.exceptions.BadRequestException.class, () -> teachers.create(request));
+
+    }
+
 }

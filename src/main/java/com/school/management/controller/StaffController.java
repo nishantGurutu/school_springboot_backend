@@ -30,7 +30,8 @@ public class StaffController {
 
     @GetMapping("/available-buses")
     public ResponseEntity<List<com.school.management.dto.transport.BusDto>> availableBuses() {
-        return ResponseEntity.ok(busAllocation.availableBuses("SCH-001"));
+        return ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(busAllocation.availableBuses("SCH-001"));
     }
 
     @GetMapping("/{id}")

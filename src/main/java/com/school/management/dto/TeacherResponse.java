@@ -20,6 +20,7 @@ import java.util.List;
 public class TeacherResponse {
 
     private Long id;
+    private Long busId;
     private String employeeId;
     private String firstName;
     private String lastName;

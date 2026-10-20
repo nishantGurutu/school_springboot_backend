@@ -25,6 +25,8 @@ public class BusDto {
     private LocalDate permitExpiryDate;
     private LocalDate pollutionExpiryDate;
     private String status;
+    private String assignmentStatus; // AVAILABLE or ASSIGNED, independent of operational status
+    private Boolean availableForAssignment;
     private Double currentSpeed;
     private Double lastLatitude;
     private Double lastLongitude;

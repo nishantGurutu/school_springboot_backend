@@ -36,6 +36,7 @@ public class TeacherServiceImpl implements TeacherService {
     private final SubjectRepository subjectRepository;
     private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
     private final PasswordEncoder passwordEncoder;
+    private final com.school.management.service.DriverBusAllocationService busAllocation;
 
     @Override
     @Transactional
@@ -57,6 +58,12 @@ public class TeacherServiceImpl implements TeacherService {
                 request.getDesignation(),
                 request.getDepartment()
         );
+        if (targetRole == Role.DRIVER && request.getBusId() == null) {
+            throw new com.school.management.exceptions.BadRequestException("Select an available bus for this driver");
+        }
+        if (targetRole != Role.DRIVER && request.getBusId() != null) {
+            throw new com.school.management.exceptions.BadRequestException("Bus assignment is available only for drivers");
+        }
         String normalizedType = normalizeTypeFromRole(targetRole);
 
         String finalDesignation = (request.getDesignation() != null && !request.getDesignation().isBlank())
@@ -233,13 +240,14 @@ public class TeacherServiceImpl implements TeacherService {
             }
         }
 
-        return TeacherResponse.fromEntity(saved);
+        if (targetRole == Role.DRIVER) assignDriverBus(teacherEmail, request.getBusId());
+        return toResponse(saved);
     }
 
     @Override
     @Transactional(readOnly = true)
     public TeacherResponse getById(Long id) {
-        return TeacherResponse.fromEntity(findByIdOrThrow(id));
+        return toResponse(findByIdOrThrow(id));
     }
 
     @Override
@@ -248,7 +256,7 @@ public class TeacherServiceImpl implements TeacherService {
         TeacherEntity teacher = teacherRepository.findByEmployeeId(employeeId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Teacher not found with employee ID: " + employeeId));
-        return TeacherResponse.fromEntity(teacher);
+        return toResponse(teacher);
     }
 
     @Override
@@ -257,14 +265,14 @@ public class TeacherServiceImpl implements TeacherService {
         TeacherEntity teacher = teacherRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Teacher not found with email: " + email));
-        return TeacherResponse.fromEntity(teacher);
+        return toResponse(teacher);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<TeacherResponse> getAll(int page, int size, String sortBy, String sortDir) {
         Pageable pageable = buildPageable(page, size, sortBy, sortDir);
-        return teacherRepository.findAll(pageable).map(TeacherResponse::fromEntity);
+        return teacherRepository.findAll(pageable).map(this::toResponse);
     }
 
     @Override
@@ -274,14 +282,14 @@ public class TeacherServiceImpl implements TeacherService {
             return Page.empty();
         }
         Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
-        return teacherRepository.search(query.trim(), pageable).map(TeacherResponse::fromEntity);
+        return teacherRepository.search(query.trim(), pageable).map(this::toResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<TeacherResponse> getByDepartment(String department, int page, int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
-        return teacherRepository.findByDepartment(department, pageable).map(TeacherResponse::fromEntity);
+        return teacherRepository.findByDepartment(department, pageable).map(this::toResponse);
     }
 
     @Override
@@ -450,7 +458,10 @@ public class TeacherServiceImpl implements TeacherService {
             }
         }
 
-        return TeacherResponse.fromEntity(updated);
+        if (roleToApply == Role.DRIVER && request.getBusId() != null) {
+            assignDriverBus(updatedEmail, request.getBusId());
+        }
+        return toResponse(updated);
     }
 
     @Override
@@ -458,7 +469,22 @@ public class TeacherServiceImpl implements TeacherService {
     public TeacherResponse updateStatus(Long id, String status) {
         TeacherEntity teacher = findByIdOrThrow(id);
         teacher.setStatus(parseStatus(status));
-        return TeacherResponse.fromEntity(teacherRepository.save(teacher));
+        return toResponse(teacherRepository.save(teacher));
+    }
+
+    private TeacherResponse toResponse(TeacherEntity teacher) {
+        TeacherResponse response = TeacherResponse.fromEntity(teacher);
+        if ("Driver".equalsIgnoreCase(teacher.getType()) && teacher.getEmail() != null) {
+            driverRepository.findByEmailIgnoreCase(teacher.getEmail().trim())
+                    .ifPresent(driver -> response.setBusId(driver.getAssignedBusId()));
+        }
+        return response;
+    }
+
+    private void assignDriverBus(String email, Long busId) {
+        var driver = driverRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new com.school.management.exceptions.BadRequestException("Driver profile could not be created"));
+        busAllocation.assign(driver, busId);
     }
 
     private TeacherStatus parseStatus(String value) {

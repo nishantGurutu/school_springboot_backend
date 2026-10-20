@@ -269,10 +269,15 @@ public class TransportServiceImpl implements TransportService {
         });
 
         tripRepository.findFirstByBusIdAndStatus(bus.getId(), "IN_PROGRESS").ifPresent(t -> {
+            dto.setAssignedDriverId(t.getDriverId());
+            driverRepository.findById(t.getDriverId()).ifPresent(driver -> dto.setAssignedDriverName(driver.getName()));
             dto.setActiveTripStatus("IN_PROGRESS");
             dto.setActiveTripId(t.getId());
         });
 
+        boolean assigned = dto.getAssignedDriverId() != null;
+        dto.setAssignmentStatus(assigned ? "ASSIGNED" : "AVAILABLE");
+        dto.setAvailableForAssignment(!assigned && "ACTIVE".equalsIgnoreCase(bus.getStatus()));
         return dto;
     }
 
