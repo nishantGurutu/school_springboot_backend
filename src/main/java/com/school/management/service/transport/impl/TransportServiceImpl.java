@@ -2436,59 +2436,7 @@ public class TransportServiceImpl implements TransportService {
     }
 
     public synchronized void seedDefaultChecklistIfEmpty(String schoolId) {
-        String sId = resolveSchool(schoolId);
-        if (checklistRepository.countBySchoolId(sId) > 0) {
-            return;
-        }
-        List<SafetyChecklistItemEntity> defaults = List.of(
-                SafetyChecklistItemEntity.builder()
-                        .schoolId(sId)
-                        .title("Brakes, Steering & Horn OK")
-                        .description("Hydraulics, brake pedal firmness & horn functional")
-                        .iconKey("speed")
-                        .isRequired(true)
-                        .isActive(true)
-                        .sortOrder(1)
-                        .build(),
-                SafetyChecklistItemEntity.builder()
-                        .schoolId(sId)
-                        .title("Headlights, Indicators & Mirrors OK")
-                        .description("High/low beams, rear indicators and side mirrors clean")
-                        .iconKey("light")
-                        .isRequired(true)
-                        .isActive(true)
-                        .sortOrder(2)
-                        .build(),
-                SafetyChecklistItemEntity.builder()
-                        .schoolId(sId)
-                        .title("Tire Pressure & Fuel / Fluids OK")
-                        .description("Tire tread condition, coolant, motor oil & fuel tank OK")
-                        .iconKey("tire")
-                        .isRequired(true)
-                        .isActive(true)
-                        .sortOrder(3)
-                        .build(),
-                SafetyChecklistItemEntity.builder()
-                        .schoolId(sId)
-                        .title("First Aid Kit & Fire Extinguisher Checked")
-                        .description("Emergency kit stocked and fire cylinder gauge in green")
-                        .iconKey("medical")
-                        .isRequired(true)
-                        .isActive(true)
-                        .sortOrder(4)
-                        .build(),
-                SafetyChecklistItemEntity.builder()
-                        .schoolId(sId)
-                        .title("Driver Phone GPS Location Enabled")
-                        .description("High-accuracy GPS active for live parent & admin tracking")
-                        .iconKey("gps")
-                        .isRequired(true)
-                        .isActive(true)
-                        .sortOrder(5)
-                        .build()
-        );
-        checklistRepository.saveAll(defaults);
-        log.info("Transport: Seeded 5 standard vehicle safety checklist items for {}", sId);
+        // Safety checklist items are created and managed only through the dashboard, not seeded from code.
     }
 
     private SafetyChecklistItemDto mapToChecklistItemDto(SafetyChecklistItemEntity e) {
