@@ -62,6 +62,13 @@ class TransportDriverFlowTest {
         assertEquals(3, playback.getPathPoints().size());
         assertEquals(28.602, playback.getPathPoints().get(2).getLatitude());
         assertEquals("Flow Bus", playback.getBusNumber());
+        assertEquals(77.001, playback.getPathPoints().get(1).getLongitude());
+        assertEquals(77.002, playback.getPathPoints().get(2).getLongitude());
+        var reports = transport.getTripHistory("SCH-001", null, bus.getId(), null);
+        assertFalse(reports.isEmpty());
+        assertEquals(trip.getTripId(), reports.get(0).getTripId());
+        assertEquals("COMPLETED", reports.get(0).getStatus());
+        assertTrue(reports.stream().allMatch(report -> bus.getId().equals(report.getBusId())));
         assertNotNull(playback.getEndTime());
         assertNull(transport.getDriverDuty(request.getEmail()).getActiveTripId());
         assertEquals(3, history.findByTripIdOrderByRecordedAtAsc(trip.getTripId()).size());
