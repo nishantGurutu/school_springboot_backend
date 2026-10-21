@@ -73,6 +73,13 @@ public interface TransportService {
     ParentTransportDto getParentChildTransport(String parentEmail, Long studentId);
     StudentTransportDto getStudentTransport(String studentEmail);
 
+    // Safety Checklist Configuration
+    List<SafetyChecklistItemDto> getSafetyChecklist(String schoolId, boolean onlyActive);
+    SafetyChecklistItemDto createSafetyChecklistItem(SafetyChecklistItemDto dto, String schoolId);
+    SafetyChecklistItemDto updateSafetyChecklistItem(Long id, SafetyChecklistItemDto dto, String schoolId);
+    void deleteSafetyChecklistItem(Long id, String schoolId);
+    List<SafetyChecklistItemDto> resetSafetyChecklistDefaults(String schoolId);
+
     // Demo Data Seeder for immediate rich UI testing
     void seedInitialTransportDataIfEmpty(String schoolId);
 }

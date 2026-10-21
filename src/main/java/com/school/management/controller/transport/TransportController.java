@@ -264,10 +264,50 @@ public class TransportController {
     }
 
     // ==========================================
+    // VEHICLE SAFETY CHECKLIST (ADMIN & DRIVER)
+    // ==========================================
+
+    @GetMapping("/safety-checklist")
+    public ResponseEntity<List<SafetyChecklistItemDto>> getSafetyChecklist(
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId,
+            @RequestParam(required = false, defaultValue = "false") boolean onlyActive) {
+        return ResponseEntity.ok(transportService.getSafetyChecklist(schoolId, onlyActive));
+    }
+
+    @PostMapping("/safety-checklist")
+    public ResponseEntity<SafetyChecklistItemDto> createSafetyChecklistItem(
+            @RequestBody SafetyChecklistItemDto dto,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(transportService.createSafetyChecklistItem(dto, schoolId));
+    }
+
+    @PutMapping("/safety-checklist/{id}")
+    public ResponseEntity<SafetyChecklistItemDto> updateSafetyChecklistItem(
+            @PathVariable Long id,
+            @RequestBody SafetyChecklistItemDto dto,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.ok(transportService.updateSafetyChecklistItem(id, dto, schoolId));
+    }
+
+    @DeleteMapping("/safety-checklist/{id}")
+    public ResponseEntity<Map<String, Object>> deleteSafetyChecklistItem(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        transportService.deleteSafetyChecklistItem(id, schoolId);
+        return ResponseEntity.ok(Map.of("success", true, "message", "Checklist item deleted"));
+    }
+
+    @PostMapping("/safety-checklist/reset-defaults")
+    public ResponseEntity<List<SafetyChecklistItemDto>> resetSafetyChecklistDefaults(
+            @RequestParam(required = false, defaultValue = "SCH-001") String schoolId) {
+        return ResponseEntity.ok(transportService.resetSafetyChecklistDefaults(schoolId));
+    }
+
+    // ==========================================
     // DRIVER OPERATIONS
     // ==========================================
 
-    @GetMapping("/driver/my-duty")
+    @GetMapping({"/driver/my-duty", "/driver/home"})
     public ResponseEntity<TripDtos.DriverDutyDto> getMyDuty(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email) {
@@ -276,6 +316,9 @@ public class TransportController {
     }
 
     private String trackingDriverEmail(UserDetails userDetails, String emailParam) {
+        if (emailParam != null && !emailParam.isBlank()) {
+            return emailParam.trim().toLowerCase();
+        }
         if (userDetails != null && userDetails.getUsername() != null && !userDetails.getUsername().isBlank()) {
             return userDetails.getUsername();
         }

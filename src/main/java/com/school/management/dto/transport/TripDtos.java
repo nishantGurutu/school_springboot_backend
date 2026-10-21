@@ -151,6 +151,22 @@ public class TripDtos {
     @AllArgsConstructor
     @Builder
     public static class DriverDutyDto {
+        // Core 3 Home Data Blocks requested by user:
+        // 1. Today Assigned Duty
+        private Object assignedDuty;
+        private Object duty;
+
+        // 2. Safety Checklist Items configured by admin
+        private List<SafetyChecklistItemDto> safetyChecklist;
+        private List<SafetyChecklistItemDto> safetyList;
+
+        // 3. Driver License verification status
+        private Boolean licenseVerified;
+        private Boolean isLicenseVerified;
+        private String verificationStatus;
+        private DriverLicenseDto driverLicense;
+
+        // Backward compatibility flat fields
         private Long driverId;
         private String driverName;
         private String phone;

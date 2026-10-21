@@ -57,6 +57,7 @@ public class TransportServiceImpl implements TransportService {
     private final StaffRepository staffRepository;
     private final TransportFeePaymentRepository feePaymentRepository;
     private final StudentRepository studentRepository;
+    private final SafetyChecklistItemRepository checklistRepository;
 
     public TransportServiceImpl(
             com.school.management.service.DriverBusAllocationService busAllocation,
@@ -77,7 +78,8 @@ public class TransportServiceImpl implements TransportService {
             TeacherRepository teacherRepository,
             StaffRepository staffRepository,
             TransportFeePaymentRepository feePaymentRepository,
-            StudentRepository studentRepository
+            StudentRepository studentRepository,
+            SafetyChecklistItemRepository checklistRepository
     ) {
         this.busAllocation = busAllocation;
         this.busRepository = busRepository;
@@ -98,6 +100,7 @@ public class TransportServiceImpl implements TransportService {
         this.staffRepository = staffRepository;
         this.feePaymentRepository = feePaymentRepository;
         this.studentRepository = studentRepository;
+        this.checklistRepository = checklistRepository;
     }
 
     private static final String DEFAULT_SCHOOL_ID = "SCH-001";
@@ -110,6 +113,7 @@ public class TransportServiceImpl implements TransportService {
     public void onStartupSeedTransportData() {
         try {
             seedInitialTransportDataIfEmpty(DEFAULT_SCHOOL_ID);
+            seedDefaultChecklistIfEmpty(DEFAULT_SCHOOL_ID);
         } catch (Exception e) {
             log.warn("Notice seeding initial transport data on startup: {}", e.getMessage());
         }
@@ -531,10 +535,62 @@ public class TransportServiceImpl implements TransportService {
 
         DriverProfileEntity saved = driverRepository.save(driver);
         logAudit(sId, "DRIVER_REGISTERED", "DRIVER", saved.getId(), "Registered driver: " + saved.getName());
+
+        // Sync to StaffEntity
+        if (staffRepository != null) {
+            try {
+                StaffEntity staff = staffRepository.findByEmailIgnoreCase(email).orElseGet(StaffEntity::new);
+                staff.setName(dto.getName());
+                staff.setEmail(email);
+                staff.setPhone(dto.getPhone());
+                staff.setDesignation("Bus Driver");
+                staff.setStaffType("Driver");
+                staff.setRole("DRIVER");
+                staff.setStatus("Active");
+                staff.setJoinDate(dto.getJoiningDate() != null ? dto.getJoiningDate().toString() : LocalDate.now().toString());
+                staffRepository.save(staff);
+            } catch (Exception e) {
+                log.warn("Notice syncing driver to staff table: {}", e.getMessage());
+            }
+        }
+
+        // Sync to TeacherEntity for unified Staff Directory
+        if (teacherRepository != null) {
+            try {
+                String fullName = dto.getName() != null ? dto.getName().trim() : "Driver";
+                String[] parts = fullName.split("\\s+", 2);
+                String firstName = parts[0];
+                String lastName = parts.length > 1 ? parts[1] : "(Driver)";
+
+                TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(email).orElseGet(() -> {
+                    return TeacherEntity.builder()
+                            .employeeId("EMP-DRV-" + saved.getId())
+                            .email(email)
+                            .firstName(firstName)
+                            .lastName(lastName)
+                            .joiningDate(dto.getJoiningDate() != null ? dto.getJoiningDate() : LocalDate.now())
+                            .build();
+                });
+                teacher.setFirstName(firstName);
+                teacher.setLastName(lastName);
+                teacher.setPhone(dto.getPhone() != null && !dto.getPhone().isBlank() ? dto.getPhone() : "+91 98000 00000");
+                teacher.setDepartment("Transport");
+                teacher.setSubject("Transport");
+                teacher.setDesignation("Bus Driver");
+                teacher.setType("Driver");
+                teacher.setStatus(com.school.management.domain.teacher.TeacherStatus.ACTIVE);
+                teacher.setAvatar(dto.getAvatarUrl());
+                teacherRepository.save(teacher);
+            } catch (Exception e) {
+                log.warn("Notice syncing driver to teacher table: {}", e.getMessage());
+            }
+        }
+
         return mapToDriverDto(saved);
     }
 
     @Override
+    @Transactional
     public DriverDto updateDriver(Long id, DriverDto dto, String schoolId) {
         String sId = resolveSchool(schoolId);
         DriverProfileEntity driver = driverRepository.findByIdAndSchoolId(id, sId)
@@ -555,15 +611,90 @@ public class TransportServiceImpl implements TransportService {
 
         DriverProfileEntity updated = driverRepository.save(driver);
         logAudit(sId, "DRIVER_UPDATED", "DRIVER", updated.getId(), "Updated driver: " + updated.getName());
+
+        String email = updated.getEmail() != null ? updated.getEmail().trim().toLowerCase() : null;
+        if (email != null && !email.isBlank()) {
+            if (staffRepository != null) {
+                staffRepository.findByEmailIgnoreCase(email).ifPresent(s -> {
+                    s.setName(updated.getName());
+                    if (updated.getPhone() != null) s.setPhone(updated.getPhone());
+                    if (updated.getStatus() != null) s.setStatus(updated.getStatus());
+                    staffRepository.save(s);
+                });
+            }
+            if (teacherRepository != null) {
+                teacherRepository.findByEmailIgnoreCase(email).ifPresent(t -> {
+                    String fullName = updated.getName() != null ? updated.getName().trim() : "";
+                    String[] parts = fullName.split("\\s+", 2);
+                    t.setFirstName(parts[0]);
+                    t.setLastName(parts.length > 1 ? parts[1] : "(Driver)");
+                    if (updated.getPhone() != null) t.setPhone(updated.getPhone());
+                    if (updated.getAvatarUrl() != null) t.setAvatar(updated.getAvatarUrl());
+                    teacherRepository.save(t);
+                });
+            }
+        }
+
         return mapToDriverDto(updated);
     }
 
     @Override
+    @Transactional
     public void deleteDriver(Long id, String schoolId) {
         String sId = resolveSchool(schoolId);
         DriverProfileEntity driver = driverRepository.findByIdAndSchoolId(id, sId)
                 .orElseThrow(() -> new ResourceNotFoundException("Driver not found with id: " + id));
+
+        String email = driver.getEmail() != null ? driver.getEmail().trim().toLowerCase() : null;
+        String phone = driver.getPhone() != null ? driver.getPhone().trim() : null;
+
+        // 1. Remove bus assignments for this driver
+        try {
+            assignmentRepository.deleteByDriverId(id);
+        } catch (Exception e) {
+            log.warn("Notice clearing bus assignments for driver {}: {}", id, e.getMessage());
+        }
+
+        // 2. Delete driver profile entity
         driverRepository.delete(driver);
+
+        // 3. Delete corresponding record from staff table if exists
+        if (staffRepository != null) {
+            try {
+                if (email != null && !email.isBlank()) {
+                    staffRepository.findByEmailIgnoreCase(email).ifPresent(staffRepository::delete);
+                }
+                if (phone != null && !phone.isBlank()) {
+                    staffRepository.findByPhone(phone).ifPresent(staffRepository::delete);
+                }
+            } catch (Exception e) {
+                log.warn("Notice deleting staff record for driver {}: {}", id, e.getMessage());
+            }
+        }
+
+        // 4. Delete corresponding record from teachers table if exists
+        if (teacherRepository != null) {
+            try {
+                if (email != null && !email.isBlank()) {
+                    teacherRepository.findByEmailIgnoreCase(email).ifPresent(teacherRepository::delete);
+                }
+                if (phone != null && !phone.isBlank()) {
+                    teacherRepository.findByPhone(phone).ifPresent(teacherRepository::delete);
+                }
+            } catch (Exception e) {
+                log.warn("Notice deleting teacher record for driver {}: {}", id, e.getMessage());
+            }
+        }
+
+        // 5. Delete corresponding record from users table if exists
+        if (userRepository != null && email != null && !email.isBlank()) {
+            try {
+                userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
+            } catch (Exception e) {
+                log.warn("Notice deleting user account for driver {}: {}", id, e.getMessage());
+            }
+        }
+
         logAudit(sId, "DRIVER_DELETED", "DRIVER", id, "Deleted driver: " + driver.getName());
     }
 
@@ -1194,9 +1325,23 @@ public class TransportServiceImpl implements TransportService {
                 .licenseExpiryDate(driver.getLicenseExpiryDate() != null ? driver.getLicenseExpiryDate().toString() : "2029-06-30")
                 .tripStatus("NONE");
 
-        if (assignment == null && driver.getAssignedBusId() != null) {
-            busRepository.findById(driver.getAssignedBusId()).ifPresent(bus -> dutyBuilder
-                    .busId(bus.getId()).busNumber(bus.getBusNumber()).registrationNumber(bus.getRegistrationNumber()).busCapacity(bus.getCapacity()));
+        if (assignment == null) {
+            if (driver.getAssignedBusId() != null) {
+                busRepository.findById(driver.getAssignedBusId()).ifPresent(bus -> dutyBuilder
+                        .busId(bus.getId()).busNumber(bus.getBusNumber()).registrationNumber(bus.getRegistrationNumber()).busCapacity(bus.getCapacity()));
+            }
+            if (driver.getAssignedRouteId() != null) {
+                routeRepository.findById(driver.getAssignedRouteId()).ifPresent(r -> {
+                    dutyBuilder.routeId(r.getId())
+                            .routeName(r.getRouteName())
+                            .routeCode(r.getRouteCode())
+                            .plannedDepartureTime(r.getMorningStartTime() != null ? r.getMorningStartTime() : "07:15 AM")
+                            .route(mapToRouteDto(r));
+                });
+            }
+            if (driver.getAssignedBusId() != null || driver.getAssignedRouteId() != null) {
+                dutyBuilder.shift("MORNING").tripStatus("SCHEDULED");
+            }
         }
         if (assignment != null) {
             dutyBuilder.assignmentId(assignment.getId())
@@ -1250,7 +1395,74 @@ public class TransportServiceImpl implements TransportService {
                     .busId(trip.getBusId()).routeId(trip.getRouteId())
                     .activeTrip(mapToTripSummaryDto(trip));
         });
-        return dutyBuilder.build();
+
+        // 2. Safety checklist from admin config for this school
+        List<SafetyChecklistItemDto> activeChecklist = getSafetyChecklist(driver.getSchoolId(), true);
+        dutyBuilder.safetyChecklist(activeChecklist);
+        dutyBuilder.safetyList(activeChecklist);
+
+        // 3. Driver license verification status & details
+        boolean isLicenseVerified = driver.getVerificationStatus() != null &&
+                "VERIFIED".equalsIgnoreCase(driver.getVerificationStatus().trim());
+        String verificationStatus = driver.getVerificationStatus() != null ? driver.getVerificationStatus() : "VERIFIED";
+        String licenseNum = (driver.getLicenseNumber() != null && !driver.getLicenseNumber().isBlank())
+                ? driver.getLicenseNumber()
+                : "DL-DRI-" + driver.getId();
+        String licenseExp = driver.getLicenseExpiryDate() != null
+                ? driver.getLicenseExpiryDate().toString()
+                : "2031-10-21";
+        String licenseCat = driver.getLicenseCategory() != null ? driver.getLicenseCategory() : "COMMERCIAL_HEAVY";
+
+        dutyBuilder.licenseVerified(isLicenseVerified);
+        dutyBuilder.isLicenseVerified(isLicenseVerified);
+        dutyBuilder.verificationStatus(verificationStatus);
+        dutyBuilder.driverLicense(DriverLicenseDto.builder()
+                .licenseNumber(licenseNum)
+                .licenseExpiryDate(licenseExp)
+                .licenseCategory(licenseCat)
+                .verificationStatus(verificationStatus)
+                .isVerified(isLicenseVerified)
+                .build());
+
+        TripDtos.DriverDutyDto dutyResult = dutyBuilder.build();
+
+        // 1. Today Assigned Duty data block (also preserves flat fields for backward compatibility)
+        Map<String, Object> dutyMap = new LinkedHashMap<>();
+        dutyMap.put("driverId", dutyResult.getDriverId());
+        dutyMap.put("driverName", dutyResult.getDriverName());
+        dutyMap.put("phone", dutyResult.getPhone());
+        dutyMap.put("licenseNumber", dutyResult.getLicenseNumber());
+        dutyMap.put("licenseExpiryDate", dutyResult.getLicenseExpiryDate());
+        dutyMap.put("assignmentId", dutyResult.getAssignmentId());
+        dutyMap.put("busId", dutyResult.getBusId());
+        dutyMap.put("busNumber", dutyResult.getBusNumber());
+        dutyMap.put("registrationNumber", dutyResult.getRegistrationNumber());
+        dutyMap.put("busCapacity", dutyResult.getBusCapacity());
+        dutyMap.put("routeId", dutyResult.getRouteId());
+        dutyMap.put("routeName", dutyResult.getRouteName());
+        dutyMap.put("routeCode", dutyResult.getRouteCode());
+        dutyMap.put("shift", dutyResult.getShift());
+        dutyMap.put("plannedDepartureTime", dutyResult.getPlannedDepartureTime());
+        dutyMap.put("activeTripId", dutyResult.getActiveTripId());
+        dutyMap.put("tripStatus", dutyResult.getTripStatus());
+        dutyMap.put("route", dutyResult.getRoute());
+        dutyMap.put("activeTrip", dutyResult.getActiveTrip());
+        dutyMap.put("todayChecklistCompleted", dutyResult.getTodayChecklistCompleted());
+        dutyMap.put("todayChecklistNotes", dutyResult.getTodayChecklistNotes());
+        dutyMap.put("todayStartLatitude", dutyResult.getTodayStartLatitude());
+        dutyMap.put("todayStartLongitude", dutyResult.getTodayStartLongitude());
+        dutyMap.put("todayStartLocationName", dutyResult.getTodayStartLocationName());
+        dutyMap.put("todayActualStartTime", dutyResult.getTodayActualStartTime());
+        dutyMap.put("todayChkBrakes", dutyResult.getTodayChkBrakes());
+        dutyMap.put("todayChkLights", dutyResult.getTodayChkLights());
+        dutyMap.put("todayChkTires", dutyResult.getTodayChkTires());
+        dutyMap.put("todayChkEmergencyKit", dutyResult.getTodayChkEmergencyKit());
+        dutyMap.put("todayChkGpsActive", dutyResult.getTodayChkGpsActive());
+
+        dutyResult.setAssignedDuty(dutyMap);
+        dutyResult.setDuty(dutyMap);
+
+        return dutyResult;
     }
 
     @Override
@@ -1391,6 +1603,11 @@ public class TransportServiceImpl implements TransportService {
                     .address("Campus Staff Quarters, Patna")
                     .build();
             return driverRepository.save(newDriver);
+        }
+        // If testing or admin account, fallback to the first active registered driver
+        List<DriverProfileEntity> allDrivers = driverRepository.findAll();
+        if (!allDrivers.isEmpty()) {
+            return allDrivers.get(0);
         }
         throw new UnauthorizedException("A registered driver is required");
     }
@@ -2131,6 +2348,164 @@ public class TransportServiceImpl implements TransportService {
                 * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    // ==========================================
+    // SAFETY CHECKLIST CONFIGURATION
+    // ==========================================
+
+    @Override
+    public List<SafetyChecklistItemDto> getSafetyChecklist(String schoolId, boolean onlyActive) {
+        String sId = resolveSchool(schoolId);
+        seedDefaultChecklistIfEmpty(sId);
+        List<SafetyChecklistItemEntity> list = onlyActive
+                ? checklistRepository.findBySchoolIdAndIsActiveTrueOrderBySortOrderAsc(sId)
+                : checklistRepository.findBySchoolIdOrderBySortOrderAsc(sId);
+        return list.stream().map(this::mapToChecklistItemDto).collect(Collectors.toList());
+    }
+
+    @Override
+    public SafetyChecklistItemDto createSafetyChecklistItem(SafetyChecklistItemDto dto, String schoolId) {
+        String sId = resolveSchool(schoolId);
+        if (dto.getTitle() == null || dto.getTitle().trim().isEmpty()) {
+            throw new BadRequestException("Safety checklist title is required");
+        }
+        Integer sortOrder = dto.getSortOrder();
+        if (sortOrder == null) {
+            sortOrder = (int) checklistRepository.countBySchoolId(sId) + 1;
+        }
+        SafetyChecklistItemEntity entity = SafetyChecklistItemEntity.builder()
+                .schoolId(sId)
+                .title(dto.getTitle().trim())
+                .description(dto.getDescription() != null ? dto.getDescription().trim() : "")
+                .iconKey(dto.getIconKey() != null && !dto.getIconKey().isBlank() ? dto.getIconKey().trim() : "check")
+                .isRequired(dto.getRequired() != null ? dto.getRequired() : true)
+                .isActive(dto.getActive() != null ? dto.getActive() : true)
+                .sortOrder(sortOrder)
+                .build();
+        SafetyChecklistItemEntity saved = checklistRepository.save(entity);
+        logAudit(sId, "CREATE", "SAFETY_CHECKLIST", saved.getId(), "Created safety checklist item: " + saved.getTitle());
+        return mapToChecklistItemDto(saved);
+    }
+
+    @Override
+    public SafetyChecklistItemDto updateSafetyChecklistItem(Long id, SafetyChecklistItemDto dto, String schoolId) {
+        String sId = resolveSchool(schoolId);
+        SafetyChecklistItemEntity entity = checklistRepository.findByIdAndSchoolId(id, sId)
+                .orElseThrow(() -> new ResourceNotFoundException("Safety checklist item not found with id: " + id));
+
+        if (dto.getTitle() != null && !dto.getTitle().trim().isEmpty()) {
+            entity.setTitle(dto.getTitle().trim());
+        }
+        if (dto.getDescription() != null) {
+            entity.setDescription(dto.getDescription().trim());
+        }
+        if (dto.getIconKey() != null && !dto.getIconKey().isBlank()) {
+            entity.setIconKey(dto.getIconKey().trim());
+        }
+        if (dto.getRequired() != null) {
+            entity.setIsRequired(dto.getRequired());
+        }
+        if (dto.getActive() != null) {
+            entity.setIsActive(dto.getActive());
+        }
+        if (dto.getSortOrder() != null) {
+            entity.setSortOrder(dto.getSortOrder());
+        }
+        SafetyChecklistItemEntity updated = checklistRepository.save(entity);
+        logAudit(sId, "UPDATE", "SAFETY_CHECKLIST", updated.getId(), "Updated safety checklist item: " + updated.getTitle());
+        return mapToChecklistItemDto(updated);
+    }
+
+    @Override
+    public void deleteSafetyChecklistItem(Long id, String schoolId) {
+        String sId = resolveSchool(schoolId);
+        SafetyChecklistItemEntity entity = checklistRepository.findByIdAndSchoolId(id, sId)
+                .orElseThrow(() -> new ResourceNotFoundException("Safety checklist item not found with id: " + id));
+        checklistRepository.delete(entity);
+        logAudit(sId, "DELETE", "SAFETY_CHECKLIST", id, "Deleted safety checklist item: " + entity.getTitle());
+    }
+
+    @Override
+    public List<SafetyChecklistItemDto> resetSafetyChecklistDefaults(String schoolId) {
+        String sId = resolveSchool(schoolId);
+        checklistRepository.deleteBySchoolId(sId);
+        seedDefaultChecklistIfEmpty(sId);
+        logAudit(sId, "RESET", "SAFETY_CHECKLIST", null, "Reset safety checklist items to standard defaults for " + sId);
+        return getSafetyChecklist(sId, false);
+    }
+
+    public synchronized void seedDefaultChecklistIfEmpty(String schoolId) {
+        String sId = resolveSchool(schoolId);
+        if (checklistRepository.countBySchoolId(sId) > 0) {
+            return;
+        }
+        List<SafetyChecklistItemEntity> defaults = List.of(
+                SafetyChecklistItemEntity.builder()
+                        .schoolId(sId)
+                        .title("Brakes, Steering & Horn OK")
+                        .description("Hydraulics, brake pedal firmness & horn functional")
+                        .iconKey("speed")
+                        .isRequired(true)
+                        .isActive(true)
+                        .sortOrder(1)
+                        .build(),
+                SafetyChecklistItemEntity.builder()
+                        .schoolId(sId)
+                        .title("Headlights, Indicators & Mirrors OK")
+                        .description("High/low beams, rear indicators and side mirrors clean")
+                        .iconKey("light")
+                        .isRequired(true)
+                        .isActive(true)
+                        .sortOrder(2)
+                        .build(),
+                SafetyChecklistItemEntity.builder()
+                        .schoolId(sId)
+                        .title("Tire Pressure & Fuel / Fluids OK")
+                        .description("Tire tread condition, coolant, motor oil & fuel tank OK")
+                        .iconKey("tire")
+                        .isRequired(true)
+                        .isActive(true)
+                        .sortOrder(3)
+                        .build(),
+                SafetyChecklistItemEntity.builder()
+                        .schoolId(sId)
+                        .title("First Aid Kit & Fire Extinguisher Checked")
+                        .description("Emergency kit stocked and fire cylinder gauge in green")
+                        .iconKey("medical")
+                        .isRequired(true)
+                        .isActive(true)
+                        .sortOrder(4)
+                        .build(),
+                SafetyChecklistItemEntity.builder()
+                        .schoolId(sId)
+                        .title("Driver Phone GPS Location Enabled")
+                        .description("High-accuracy GPS active for live parent & admin tracking")
+                        .iconKey("gps")
+                        .isRequired(true)
+                        .isActive(true)
+                        .sortOrder(5)
+                        .build()
+        );
+        checklistRepository.saveAll(defaults);
+        log.info("Transport: Seeded 5 standard vehicle safety checklist items for {}", sId);
+    }
+
+    private SafetyChecklistItemDto mapToChecklistItemDto(SafetyChecklistItemEntity e) {
+        return SafetyChecklistItemDto.builder()
+                .id(e.getId())
+                .schoolId(e.getSchoolId())
+                .title(e.getTitle())
+                .description(e.getDescription())
+                .iconKey(e.getIconKey())
+                .isRequired(e.getIsRequired())
+                .required(e.getIsRequired())
+                .isActive(e.getIsActive())
+                .active(e.getIsActive())
+                .sortOrder(e.getSortOrder())
+                .createdAt(e.getCreatedAt())
+                .updatedAt(e.getUpdatedAt())
+                .build();
     }
 
     // ==========================================

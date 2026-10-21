@@ -35,8 +35,10 @@ public class TeacherServiceImpl implements TeacherService {
     private final SchoolClassRepository schoolClassRepository;
     private final SubjectRepository subjectRepository;
     private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
+    private final com.school.management.repository.transport.BusAssignmentRepository busAssignmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final com.school.management.service.DriverBusAllocationService busAllocation;
+
 
     @Override
     @Transactional
@@ -503,14 +505,46 @@ public class TeacherServiceImpl implements TeacherService {
     @Transactional
     public void delete(Long id) {
         TeacherEntity teacher = findByIdOrThrow(id);
-        if (teacher.getEmail() != null) {
-            String email = teacher.getEmail().trim();
+        String email = teacher.getEmail() != null ? teacher.getEmail().trim().toLowerCase() : null;
+        String phone = teacher.getPhone() != null ? teacher.getPhone().trim() : null;
+
+        if (email != null && !email.isBlank()) {
             userRepository.findByEmailIgnoreCase(email).ifPresent(userRepository::delete);
             if (driverRepository != null) {
+                driverRepository.findByEmailIgnoreCase(email).ifPresent(driver -> {
+                    if (busAssignmentRepository != null) {
+                        try {
+                            busAssignmentRepository.deleteByDriverId(driver.getId());
+                        } catch (Exception ignored) {}
+                    }
+                    try {
+                        driverRepository.delete(driver);
+                    } catch (Exception ignored) {}
+                });
+            }
+            if (staffRepository != null) {
                 try {
-                    driverRepository.findByEmailIgnoreCase(email).ifPresent(driverRepository::delete);
-                } catch (Exception ignored) {
-                }
+                    staffRepository.findByEmailIgnoreCase(email).ifPresent(staffRepository::delete);
+                } catch (Exception ignored) {}
+            }
+        }
+        if (phone != null && !phone.isBlank()) {
+            if (staffRepository != null) {
+                try {
+                    staffRepository.findByPhone(phone).ifPresent(staffRepository::delete);
+                } catch (Exception ignored) {}
+            }
+            if (driverRepository != null) {
+                try {
+                    driverRepository.findByPhone(phone).ifPresent(driver -> {
+                        if (busAssignmentRepository != null) {
+                            try {
+                                busAssignmentRepository.deleteByDriverId(driver.getId());
+                            } catch (Exception ignored) {}
+                        }
+                        driverRepository.delete(driver);
+                    });
+                } catch (Exception ignored) {}
             }
         }
         teacherRepository.delete(teacher);

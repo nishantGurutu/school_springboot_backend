@@ -8,6 +8,7 @@ import com.school.management.entity.UserEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.StaffRepository;
+import com.school.management.repository.TeacherRepository;
 import com.school.management.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,9 +23,12 @@ public class StaffService {
 
     private final StaffRepository staffRepository;
     private final UserRepository userRepository;
+    private final TeacherRepository teacherRepository;
     private final com.school.management.repository.transport.DriverProfileRepository driverRepository;
+    private final com.school.management.repository.transport.BusAssignmentRepository assignmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final DriverBusAllocationService busAllocation;
+
 
     @Transactional(readOnly = true)
     public List<StaffResponse> getAll() {
@@ -99,6 +103,9 @@ public class StaffService {
             }
         }
 
+        // Sync to TeacherEntity for unified Staff Directory
+        syncStaffToTeacher(saved, request);
+
         assignSelectedBus(saved, request);
         return StaffResponse.fromEntity(saved);
     }
@@ -151,11 +158,21 @@ public class StaffService {
             } else if (driverRepository != null) {
                 // If role changed away from DRIVER, remove from driverRepository
                 try {
-                    driverRepository.findByEmailIgnoreCase(staffEmail).ifPresent(driverRepository::delete);
+                    driverRepository.findByEmailIgnoreCase(staffEmail).ifPresent(driver -> {
+                        if (assignmentRepository != null) {
+                            try {
+                                assignmentRepository.deleteByDriverId(driver.getId());
+                            } catch (Exception ignored) {}
+                        }
+                        driverRepository.delete(driver);
+                    });
                 } catch (Exception ignored) {
                 }
             }
         }
+
+        // Sync to TeacherEntity for unified Staff Directory
+        syncStaffToTeacher(updated, request);
 
         assignSelectedBus(updated, request);
         return StaffResponse.fromEntity(updated);
@@ -164,17 +181,82 @@ public class StaffService {
     @Transactional
     public void delete(Long id) {
         StaffEntity staff = findByIdOrThrow(id);
-        if (staff.getEmail() != null) {
-            String staffEmail = staff.getEmail().trim();
+        String staffEmail = staff.getEmail() != null ? staff.getEmail().trim().toLowerCase() : null;
+        String phone = staff.getPhone() != null ? staff.getPhone().trim() : null;
+
+        if (staffEmail != null && !staffEmail.isBlank()) {
             userRepository.findByEmailIgnoreCase(staffEmail).ifPresent(userRepository::delete);
             if (driverRepository != null) {
+                driverRepository.findByEmailIgnoreCase(staffEmail).ifPresent(driver -> {
+                    if (assignmentRepository != null) {
+                        try {
+                            assignmentRepository.deleteByDriverId(driver.getId());
+                        } catch (Exception ignored) {}
+                    }
+                    try {
+                        driverRepository.delete(driver);
+                    } catch (Exception ignored) {}
+                });
+            }
+            if (teacherRepository != null) {
                 try {
-                    driverRepository.findByEmailIgnoreCase(staffEmail).ifPresent(driverRepository::delete);
-                } catch (Exception ignored) {
-                }
+                    teacherRepository.findByEmailIgnoreCase(staffEmail).ifPresent(teacherRepository::delete);
+                } catch (Exception ignored) {}
+            }
+        }
+        if (phone != null && !phone.isBlank()) {
+            if (teacherRepository != null) {
+                try {
+                    teacherRepository.findByPhone(phone).ifPresent(teacherRepository::delete);
+                } catch (Exception ignored) {}
+            }
+            if (driverRepository != null) {
+                try {
+                    driverRepository.findByPhone(phone).ifPresent(driver -> {
+                        if (assignmentRepository != null) {
+                            try {
+                                assignmentRepository.deleteByDriverId(driver.getId());
+                            } catch (Exception ignored) {}
+                        }
+                        driverRepository.delete(driver);
+                    });
+                } catch (Exception ignored) {}
             }
         }
         staffRepository.delete(staff);
+    }
+
+    private void syncStaffToTeacher(StaffEntity staff, StaffRequest request) {
+        if (teacherRepository == null || staff == null || staff.getEmail() == null || staff.getEmail().isBlank()) return;
+        try {
+            String staffEmail = staff.getEmail().trim().toLowerCase();
+            String fullName = staff.getName() != null ? staff.getName().trim() : "Staff Member";
+            String[] parts = fullName.split("\\s+", 2);
+            String firstName = parts[0];
+            Role targetRole = resolveRole(request);
+            boolean isDriver = targetRole == Role.DRIVER;
+            String lastName = parts.length > 1 ? parts[1] : (isDriver ? "(Driver)" : "(Staff)");
+
+            com.school.management.entity.TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(staffEmail).orElseGet(() -> {
+                return com.school.management.entity.TeacherEntity.builder()
+                        .employeeId("EMP-STF-" + (staff.getId() != null ? staff.getId() : System.currentTimeMillis()))
+                        .email(staffEmail)
+                        .firstName(firstName)
+                        .lastName(lastName)
+                        .joiningDate(java.time.LocalDate.now())
+                        .build();
+            });
+            teacher.setFirstName(firstName);
+            teacher.setLastName(lastName);
+            teacher.setPhone(staff.getPhone() != null && !staff.getPhone().isBlank() ? staff.getPhone() : "+91 98000 00000");
+            teacher.setDepartment(isDriver ? "Transport" : "Administration");
+            teacher.setSubject(isDriver ? "Transport" : "General");
+            teacher.setDesignation(staff.getDesignation() != null ? staff.getDesignation() : (isDriver ? "Bus Driver" : "Staff"));
+            teacher.setType(isDriver ? "Driver" : (staff.getStaffType() != null ? staff.getStaffType() : "Staff"));
+            teacher.setStatus(com.school.management.domain.teacher.TeacherStatus.ACTIVE);
+            teacherRepository.save(teacher);
+        } catch (Exception ignored) {
+        }
     }
 
     private void validateBusSelection(StaffRequest request, boolean create) {
