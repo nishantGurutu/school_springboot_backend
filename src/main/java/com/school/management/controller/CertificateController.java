@@ -2,12 +2,17 @@ package com.school.management.controller;
 
 import com.school.management.dto.CertificateRequest;
 import com.school.management.dto.CertificateResponse;
+import com.school.management.entity.CertificateEntity;
+import com.school.management.service.CertificatePdfService;
 import com.school.management.service.CertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,6 +25,7 @@ import java.util.List;
 public class CertificateController {
 
     private final CertificateService certificateService;
+    private final CertificatePdfService certificatePdfService;
 
     @PostMapping
     @Operation(summary = "Create a new certificate")
@@ -29,8 +35,8 @@ public class CertificateController {
 
     @GetMapping
     @Operation(summary = "List all certificates")
-    public ResponseEntity<List<CertificateResponse>> getAll() {
-        return ResponseEntity.ok(certificateService.getAll());
+    public ResponseEntity<List<CertificateResponse>> getAll(@RequestParam(required = false) String admissionNo) {
+        return ResponseEntity.ok(certificateService.getAll(admissionNo));
     }
 
     @GetMapping("/{id}")
@@ -52,5 +58,43 @@ public class CertificateController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         certificateService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/pdf")
+    @Operation(summary = "Generate and stream Certificate PDF matching design")
+    public ResponseEntity<byte[]> getCertificatePdf(@PathVariable Long id) {
+        CertificateEntity entity = certificateService.getEntityById(id);
+        byte[] pdfBytes = certificatePdfService.generateCertificatePdf(entity);
+
+        String safeName = (entity.getName() != null && !entity.getName().isBlank())
+                ? entity.getName().trim().replaceAll("\\s+", "_")
+                : "Student";
+        String filename = "Certificate_" + safeName + ".pdf";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(ContentDisposition.inline().filename(filename).build());
+        headers.setContentLength(pdfBytes.length);
+
+        return ResponseEntity.ok().headers(headers).body(pdfBytes);
+    }
+
+    @GetMapping("/{id}/download")
+    @Operation(summary = "Download Certificate PDF as file attachment")
+    public ResponseEntity<byte[]> downloadCertificatePdf(@PathVariable Long id) {
+        CertificateEntity entity = certificateService.getEntityById(id);
+        byte[] pdfBytes = certificatePdfService.generateCertificatePdf(entity);
+
+        String safeName = (entity.getName() != null && !entity.getName().isBlank())
+                ? entity.getName().trim().replaceAll("\\s+", "_")
+                : "Student";
+        String filename = "Certificate_" + safeName + ".pdf";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDisposition(ContentDisposition.attachment().filename(filename).build());
+        headers.setContentLength(pdfBytes.length);
+
+        return ResponseEntity.ok().headers(headers).body(pdfBytes);
     }
 }

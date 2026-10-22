@@ -3,6 +3,7 @@ package com.school.management.service;
 import com.school.management.dto.CertificateRequest;
 import com.school.management.dto.CertificateResponse;
 import com.school.management.entity.CertificateEntity;
+import com.school.management.entity.StudentEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.DuplicateResourceException;
 import com.school.management.exceptions.ResourceNotFoundException;
@@ -26,7 +27,7 @@ public class CertificateService {
         access.requireManager();
         var student = access.student(request.getAdmissionNo());
         String name = student.getName();
-        String certName = request.getCertificateName() != null ? request.getCertificateName().trim() : null;
+        String certName = requireNonBlank(request.getCertificateName(), "Certificate name is required").trim();
         if (certName != null && certificateRepository.findAll().stream().anyMatch(c -> student.getAdmissionNo().equalsIgnoreCase(c.getAdmissionNo()) && certName.equalsIgnoreCase(c.getCertificateName()))) {
             throw new DuplicateResourceException(
                     "Certificate with name '" + name + "' and certificate name '" + certName + "' already exists");
@@ -34,9 +35,9 @@ public class CertificateService {
 
         CertificateEntity entity = CertificateEntity.builder()
                 .name(name)
-                .admissionNo(request.getAdmissionNo())
+                .admissionNo(student.getAdmissionNo())
                 .rollNo(student.getRollNo())
-                .className(student.getClassName())
+                .className(certificateClass(student))
                 .certificateName(certName)
                 .bgImage(request.getBgImage())
                 .avatar(request.getAvatar())
@@ -48,9 +49,10 @@ public class CertificateService {
     }
 
     @Transactional(readOnly = true)
-    public List<CertificateResponse> getAll() {
+    public List<CertificateResponse> getAll(String admissionNo) {
         return certificateRepository.findAll().stream()
                 .filter(this::visible)
+                .filter(c -> admissionNo == null || admissionNo.isBlank() || admissionNo.trim().equalsIgnoreCase(c.getAdmissionNo()))
                 .map(CertificateResponse::fromEntity)
                 .toList();
     }
@@ -60,6 +62,11 @@ public class CertificateService {
         return CertificateResponse.fromEntity(findByIdOrThrow(id));
     }
 
+    @Transactional(readOnly = true)
+    public CertificateEntity getEntityById(Long id) {
+        return findByIdOrThrow(id);
+    }
+
     @Transactional
     public CertificateResponse update(Long id, CertificateRequest request) {
         access.requireManager();
@@ -67,10 +74,10 @@ public class CertificateService {
         var student = access.student(request.getAdmissionNo());
         String name = student.getName();
         entity.setName(name);
-        entity.setAdmissionNo(request.getAdmissionNo());
+        entity.setAdmissionNo(student.getAdmissionNo());
         entity.setRollNo(student.getRollNo());
-        entity.setClassName(student.getClassName());
-        entity.setCertificateName(request.getCertificateName());
+        entity.setClassName(certificateClass(student));
+        entity.setCertificateName(requireNonBlank(request.getCertificateName(), "Certificate name is required").trim());
         entity.setBgImage(request.getBgImage());
         entity.setAvatar(request.getAvatar());
         entity.setDate(request.getDate());
@@ -92,8 +99,23 @@ public class CertificateService {
     }
 
     private boolean visible(CertificateEntity c) {
-        if (access.manager()) return access.actor().getRole()!=com.school.management.domain.user.Role.TEACHER || (c.getAdmissionNo()!=null && students.findByAdmissionNoIgnoreCase(c.getAdmissionNo()).map(s -> access.teaches(s.getClassName(), s.getSection())).orElse(false));
-        return c.getAdmissionNo()!=null && access.children().stream().anyMatch(s -> c.getAdmissionNo().equalsIgnoreCase(s.getAdmissionNo()));
+        if (access.manager()) {
+            if (access.actor().getRole() != com.school.management.domain.user.Role.TEACHER) return true;
+            if (c.getAdmissionNo() != null && !c.getAdmissionNo().isBlank()) {
+                return students.findByAdmissionNoIgnoreCase(c.getAdmissionNo())
+                        .map(s -> access.teaches(s.getClassName(), s.getSection()))
+                        .orElse(true);
+            }
+            return true;
+        }
+        if (c.getAdmissionNo() == null || c.getAdmissionNo().isBlank()) return false;
+        return access.children().stream().anyMatch(s ->
+                c.getAdmissionNo().equalsIgnoreCase(s.getAdmissionNo()));
+    }
+
+    private String certificateClass(StudentEntity student) {
+        return student.getClassName() + (student.getSection() == null || student.getSection().isBlank()
+                ? "" : " (" + student.getSection() + ")");
     }
 
     private String requireNonBlank(String value, String message) {

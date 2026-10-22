@@ -6,6 +6,8 @@ import com.school.management.entity.StaffEntity;
 import com.school.management.entity.TeacherEntity;
 import com.school.management.entity.UserEntity;
 import com.school.management.entity.transport.DriverProfileEntity;
+import com.school.management.entity.GalleryAlbumEntity;
+import com.school.management.repository.GalleryAlbumRepository;
 import com.school.management.repository.StaffRepository;
 import com.school.management.repository.TeacherRepository;
 import com.school.management.repository.UserRepository;
@@ -27,6 +29,7 @@ public class DataInitializer implements CommandLineRunner {
     private final TeacherRepository teacherRepository;
     private final StaffRepository staffRepository;
     private final DriverProfileRepository driverRepository;
+    private final GalleryAlbumRepository galleryAlbumRepository;
     private final PasswordEncoder passwordEncoder;
     private final JdbcTemplate jdbcTemplate;
 
@@ -182,6 +185,50 @@ public class DataInitializer implements CommandLineRunner {
             }
         } catch (Exception e) {
             System.err.println("Notice during staff/driver synchronization: " + e.getMessage());
+        }
+
+        // Ensure default Gallery Albums exist for web dashboard and mobile app
+        try {
+            if (galleryAlbumRepository.count() == 0) {
+                galleryAlbumRepository.save(GalleryAlbumEntity.builder()
+                        .title("Annual Sports Meet 2026")
+                        .description("Thrilling track and field competitions, relay races, and award ceremonies celebrating student athletics.")
+                        .coverImage("https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=800&auto=format&fit=crop&q=80")
+                        .photoCount(24)
+                        .status("Active")
+                        .displayOrder(1)
+                        .build());
+
+                galleryAlbumRepository.save(GalleryAlbumEntity.builder()
+                        .title("Science & Tech Fair")
+                        .description("Innovative robotics projects, chemistry experiments, and eco-sustainable models presented by students.")
+                        .coverImage("https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&auto=format&fit=crop&q=80")
+                        .photoCount(16)
+                        .status("Active")
+                        .displayOrder(2)
+                        .build());
+
+                galleryAlbumRepository.save(GalleryAlbumEntity.builder()
+                        .title("Cultural Day & Arts Gala")
+                        .description("Vibrant folk dances, theatrical performances, musical orchestras, and fine art displays.")
+                        .coverImage("https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80")
+                        .photoCount(32)
+                        .status("Active")
+                        .displayOrder(3)
+                        .build());
+
+                galleryAlbumRepository.save(GalleryAlbumEntity.builder()
+                        .title("Smart Campus & Library")
+                        .description("State-of-the-art STEM labs, digital library, sports arena, and green eco-friendly school campus.")
+                        .coverImage("https://images.unsplash.com/photo-1580582932707-520aed937b7b?w=800&auto=format&fit=crop&q=80")
+                        .photoCount(12)
+                        .status("Active")
+                        .displayOrder(4)
+                        .build());
+                System.out.println("DataInitializer: Seeded default active gallery albums.");
+            }
+        } catch (Exception e) {
+            System.err.println("Notice during gallery seeding: " + e.getMessage());
         }
 
         System.out.println("========================================");

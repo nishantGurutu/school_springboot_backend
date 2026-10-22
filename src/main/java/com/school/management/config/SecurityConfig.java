@@ -73,6 +73,7 @@ public class SecurityConfig {
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
                         .requestMatchers("/api/leaves/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "STAFF")
+                        .requestMatchers("/api/certificates/*/pdf", "/api/certificates/*/download").permitAll()
                         .requestMatchers("/api/certificates/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
                         .requestMatchers("/api/library/**")
@@ -116,6 +117,8 @@ public class SecurityConfig {
                         // clients
                         .requestMatchers("/api/mobile/notices/**").permitAll()
                         .requestMatchers("/api/mobile/holidays/**").permitAll()
+                        .requestMatchers("/api/gallery/**").permitAll()
+                        .requestMatchers("/api/mobile/gallery/**").permitAll()
                         .requestMatchers("/api/mobile/**").authenticated()
 
                         // User profile - any authenticated user
