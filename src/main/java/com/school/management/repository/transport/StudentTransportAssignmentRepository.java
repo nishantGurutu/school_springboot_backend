@@ -9,6 +9,7 @@ import java.util.Optional;
 
 @Repository
 public interface StudentTransportAssignmentRepository extends JpaRepository<StudentTransportAssignmentEntity, Long> {
+    List<StudentTransportAssignmentEntity> findByStudentIdOrAdmissionNoIgnoreCaseOrderByIdDesc(Long studentId, String admissionNo);
     List<StudentTransportAssignmentEntity> findBySchoolId(String schoolId);
     Optional<StudentTransportAssignmentEntity> findByStudentIdAndStatus(Long studentId, String status);
     Optional<StudentTransportAssignmentEntity> findFirstByStudentIdOrderByIdDesc(Long studentId);

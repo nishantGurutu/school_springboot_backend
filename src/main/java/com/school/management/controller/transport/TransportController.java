@@ -469,7 +469,7 @@ public class TransportController {
             @PathVariable Long studentId,
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email) {
-        String pEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String pEmail = resolveEmail(userDetails);
         return ResponseEntity.ok(transportService.getParentChildTransport(pEmail, studentId));
     }
 
@@ -477,7 +477,7 @@ public class TransportController {
     public ResponseEntity<StudentTransportDto> getStudentTransport(
             @AuthenticationPrincipal UserDetails userDetails,
             @RequestParam(required = false) String email) {
-        String sEmail = (email != null && !email.isBlank()) ? email : resolveEmail(userDetails);
+        String sEmail = resolveEmail(userDetails);
         return ResponseEntity.ok(transportService.getStudentTransport(sEmail));
     }
 }

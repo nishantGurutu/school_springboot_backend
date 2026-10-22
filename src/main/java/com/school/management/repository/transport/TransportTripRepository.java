@@ -18,6 +18,7 @@ public interface TransportTripRepository extends JpaRepository<TransportTripEnti
     @Query("select t from TransportTripEntity t where t.id = :id")
     Optional<TransportTripEntity> findForCompletion(@Param("id") Long id);
 
+    Optional<TransportTripEntity> findFirstByRouteIdAndSchoolIdAndTripDateOrderByIdDesc(Long routeId, String schoolId, LocalDate tripDate);
     List<TransportTripEntity> findBySchoolId(String schoolId);
     Optional<TransportTripEntity> findByIdAndSchoolId(Long id, String schoolId);
     List<TransportTripEntity> findBySchoolIdAndStatus(String schoolId, String status);

@@ -58,6 +58,7 @@ public class TransportServiceImpl implements TransportService {
     private final TransportFeePaymentRepository feePaymentRepository;
     private final StudentRepository studentRepository;
     private final SafetyChecklistItemRepository checklistRepository;
+    private final com.school.management.service.PortalAccessService portalAccess;
 
     public TransportServiceImpl(
             com.school.management.service.DriverBusAllocationService busAllocation,
@@ -79,7 +80,8 @@ public class TransportServiceImpl implements TransportService {
             StaffRepository staffRepository,
             TransportFeePaymentRepository feePaymentRepository,
             StudentRepository studentRepository,
-            SafetyChecklistItemRepository checklistRepository
+            SafetyChecklistItemRepository checklistRepository,
+            com.school.management.service.PortalAccessService portalAccess
     ) {
         this.busAllocation = busAllocation;
         this.busRepository = busRepository;
@@ -101,6 +103,7 @@ public class TransportServiceImpl implements TransportService {
         this.feePaymentRepository = feePaymentRepository;
         this.studentRepository = studentRepository;
         this.checklistRepository = checklistRepository;
+        this.portalAccess = portalAccess;
     }
 
     private static final String DEFAULT_SCHOOL_ID = "SCH-001";
@@ -1057,6 +1060,7 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public List<StudentAssignmentDto> getStudentAssignments(String schoolId) {
+        portalAccess.requireManager();
         String sId = resolveSchool(schoolId);
         seedInitialTransportDataIfEmpty(sId);
         return studentAssignmentRepository.findBySchoolId(sId).stream()
@@ -1066,7 +1070,14 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public StudentAssignmentDto assignStudentToRoute(StudentAssignmentDto dto, String schoolId) {
+        portalAccess.requireManager();
         String sId = resolveSchool(schoolId);
+        var student = validateStudentTransport(dto, sId);
+        var existing = currentStudentAssignment(student);
+        if (existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus())
+                && (existing.getEndDate() == null || !existing.getEndDate().isBefore(LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))))) {
+            throw new DuplicateResourceException("Student already has active transport. Edit the existing assignment.");
+        }
 
         Double fee = dto.getMonthlyFee();
         if (fee == null || fee <= 0) {
@@ -1104,10 +1115,14 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public StudentAssignmentDto updateStudentAssignment(Long id, StudentAssignmentDto dto, String schoolId) {
+        portalAccess.requireManager();
         String sId = resolveSchool(schoolId);
+        validateStudentTransport(dto, sId);
         StudentTransportAssignmentEntity entity = studentAssignmentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Student assignment not found with id: " + id));
 
+        if (!sId.equals(entity.getSchoolId())) throw new ResourceNotFoundException("Student assignment not found");
+        entity.setStudentId(dto.getStudentId());
         if (dto.getStudentName() != null) entity.setStudentName(dto.getStudentName());
         if (dto.getAdmissionNo() != null) entity.setAdmissionNo(dto.getAdmissionNo());
         if (dto.getClassName() != null) entity.setClassName(dto.getClassName());
@@ -1119,7 +1134,7 @@ public class TransportServiceImpl implements TransportService {
         if (dto.getGuardianPhone() != null) entity.setGuardianPhone(dto.getGuardianPhone());
         if (dto.getTripType() != null) entity.setTripType(dto.getTripType());
         if (dto.getStartDate() != null) entity.setStartDate(dto.getStartDate());
-        if (dto.getEndDate() != null) entity.setEndDate(dto.getEndDate());
+        entity.setEndDate(dto.getEndDate());
         if (dto.getMonthlyFee() != null) entity.setMonthlyFee(dto.getMonthlyFee());
         if (dto.getFeeStatus() != null) entity.setFeeStatus(dto.getFeeStatus());
         if (dto.getStatus() != null) entity.setStatus(dto.getStatus());
@@ -1132,8 +1147,11 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public void removeStudentAssignment(Long id, String schoolId) {
+        portalAccess.requireManager();
         String sId = resolveSchool(schoolId);
-        studentAssignmentRepository.deleteById(id);
+        var assignment = studentAssignmentRepository.findById(id)
+                .filter(a -> sId.equals(a.getSchoolId())).orElseThrow(() -> new ResourceNotFoundException("Student assignment not found"));
+        studentAssignmentRepository.delete(assignment);
         logAudit(sId, "STUDENT_UNASSIGNED", "STUDENT", id, "Removed student assignment id " + id);
     }
 
@@ -2209,29 +2227,36 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public ParentTransportDto getParentChildTransport(String parentEmail, Long studentId) {
-        StudentTransportAssignmentEntity assignment = studentAssignmentRepository.findFirstByStudentIdOrderByIdDesc(studentId)
-                .orElseThrow(() -> new ResourceNotFoundException("No transport assigned for student id: " + studentId));
+        var student = portalAccess.children().stream().filter(c -> Objects.equals(c.getId(), studentId))
+                .findFirst().orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.FORBIDDEN, "Student is not linked to this account"));
+        var assignment = currentStudentAssignment(student);
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        if (assignment == null || !"ACTIVE".equalsIgnoreCase(assignment.getStatus())
+                || (assignment.getStartDate() != null && assignment.getStartDate().isAfter(today))
+                || (assignment.getEndDate() != null && assignment.getEndDate().isBefore(today))) {
+            return ParentTransportDto.builder().assigned(false).studentId(student.getId())
+                    .studentName(student.getName()).admissionNo(student.getAdmissionNo())
+                    .assignmentStatus(assignment == null ? "NONE" : assignment.getStatus())
+                    .tripStatus("NONE").build();
+        }
 
         TransportRouteEntity route = routeRepository.findById(assignment.getRouteId()).orElse(null);
         RouteStopEntity stop = assignment.getPickupStopId() != null ? stopRepository.findById(assignment.getPickupStopId()).orElse(null) : null;
 
         // Find active trip for this route
         Optional<TransportTripEntity> activeTrip = tripRepository.findFirstByRouteIdAndSchoolIdAndStatus(assignment.getRouteId(), assignment.getSchoolId(), "IN_PROGRESS");
-        if (activeTrip.isEmpty()) {
-            List<BusAssignmentEntity> busAssignments = assignmentRepository.findByRouteIdAndStatus(assignment.getRouteId(), "ACTIVE");
-            if (!busAssignments.isEmpty()) {
-                activeTrip = tripRepository.findFirstByBusIdAndStatus(busAssignments.get(0).getBusId(), "IN_PROGRESS");
-            }
-        }
+
 
         BusEntity bus = null;
         DriverProfileEntity driver = null;
         Double lat = null;
         Double lon = null;
         Double speed = 0.0;
-        int eta = 8;
+        Integer eta = null;
         String tripStatus = "SCHEDULED";
         LocalDateTime lastGps = null;
+        boolean fresh = false;
 
         if (activeTrip.isPresent()) {
             TransportTripEntity t = activeTrip.get();
@@ -2240,35 +2265,51 @@ public class TransportServiceImpl implements TransportService {
             lat = live != null ? live.point().getLatitude() : t.getLastLatitude();
             lon = live != null ? live.point().getLongitude() : t.getLastLongitude();
             speed = live != null ? live.point().getSpeedKmh() : 0.0;
-            eta = t.getNextStopEtaMinutes() != null ? t.getNextStopEtaMinutes() : 8;
+            eta = Objects.equals(t.getNextStopId(), assignment.getPickupStopId()) ? t.getNextStopEtaMinutes() : null;
             lastGps = live != null ? live.receivedAt() : t.getLastLocationTime();
+            fresh = live != null
+                    ? live.point().getRecordedAt() != null && !live.point().getRecordedAt().isBefore(LocalDateTime.now(java.time.ZoneOffset.UTC).minusSeconds(60))
+                    : lastGps != null && !lastGps.isBefore(LocalDateTime.now().minusSeconds(60));
             bus = busRepository.findById(t.getBusId()).orElse(null);
             driver = driverRepository.findById(t.getDriverId()).orElse(null);
         } else {
-            List<BusAssignmentEntity> busAssignments = assignmentRepository.findByRouteIdAndStatus(assignment.getRouteId(), "ACTIVE");
-            if (!busAssignments.isEmpty()) {
-                bus = busRepository.findById(busAssignments.get(0).getBusId()).orElse(null);
-                driver = driverRepository.findById(busAssignments.get(0).getDriverId()).orElse(null);
+            tripStatus = tripRepository.findFirstByRouteIdAndSchoolIdAndTripDateOrderByIdDesc(assignment.getRouteId(), assignment.getSchoolId(), today)
+                    .map(TransportTripEntity::getStatus).orElse("SCHEDULED");
+            var duty = assignmentRepository.findByRouteIdAndStatus(assignment.getRouteId(), "ACTIVE").stream()
+                    .filter(d -> Objects.equals(d.getSchoolId(), assignment.getSchoolId()))
+                    .filter(d -> d.getEffectiveStartDate() == null || !d.getEffectiveStartDate().isAfter(today))
+                    .filter(d -> d.getEffectiveEndDate() == null || !d.getEffectiveEndDate().isBefore(today))
+                    .max(Comparator.comparing(BusAssignmentEntity::getId));
+            if (duty.isPresent()) {
+                bus = busRepository.findById(duty.get().getBusId()).orElse(null);
+                driver = driverRepository.findById(duty.get().getDriverId()).orElse(null);
             }
         }
 
+        if (!fresh) { lat = null; lon = null; speed = null; eta = null; }
+        RouteStopEntity drop = assignment.getDropStopId() == null ? null : stopRepository.findById(assignment.getDropStopId()).orElse(null);
         return ParentTransportDto.builder()
+                .assigned(true).assignmentStatus(assignment.getStatus()).tripType(assignment.getTripType())
+                .tripId(activeTrip.map(TransportTripEntity::getId).orElse(null)).gpsFresh(fresh)
+                .stopLatitude(stop == null ? null : stop.getLatitude()).stopLongitude(stop == null ? null : stop.getLongitude())
+                .dropStopName(drop == null ? null : drop.getStopName())
+                .dropLatitude(drop == null ? null : drop.getLatitude()).dropLongitude(drop == null ? null : drop.getLongitude())
                 .studentId(studentId)
-                .studentName(assignment.getStudentName())
-                .admissionNo(assignment.getAdmissionNo())
-                .className(assignment.getClassName())
+                .studentName(student.getName())
+                .admissionNo(student.getAdmissionNo())
+                .className(student.getClassName())
                 .routeId(assignment.getRouteId())
-                .routeName(route != null ? route.getRouteName() : "Assigned Route")
-                .stopName(stop != null ? stop.getStopName() : "Main Gate Stop")
-                .scheduledPickupTime(assignment.getPickupTime() != null ? assignment.getPickupTime() : "07:30 AM")
-                .scheduledDropTime(assignment.getDropTime() != null ? assignment.getDropTime() : "03:15 PM")
-                .pickupStatus(assignment.getPickupStatus())
+                .routeName(route != null ? route.getRouteName() : null)
+                .stopName(stop != null ? stop.getStopName() : null)
+                .scheduledPickupTime(assignment.getPickupTime() != null ? assignment.getPickupTime() : stop != null ? stop.getPlannedMorningPickupTime() : null)
+                .scheduledDropTime(assignment.getDropTime() != null ? assignment.getDropTime() : drop != null ? drop.getPlannedEveningDropTime() : null)
+                .pickupStatus(assignment.getLastStatusUpdate() != null && assignment.getLastStatusUpdate().toLocalDate().equals(today) ? assignment.getPickupStatus() : "SCHEDULED")
                 .statusUpdatedAt(assignment.getLastStatusUpdate())
                 .tripStatus(tripStatus)
                 .busId(bus != null ? bus.getId() : null)
-                .busNumber(bus != null ? bus.getBusNumber() : "Bus 04")
-                .driverName(driver != null ? driver.getName() : "Ramesh Kumar")
-                .driverPhone(driver != null ? driver.getPhone() : "+91 98765 43210")
+                .busNumber(bus != null ? bus.getBusNumber() : null)
+                .driverName(driver != null ? driver.getName() : null)
+                .driverPhone(driver != null ? driver.getPhone() : null)
                 .busLatitude(lat)
                 .busLongitude(lon)
                 .busSpeedKmh(speed)
@@ -2280,43 +2321,55 @@ public class TransportServiceImpl implements TransportService {
 
     @Override
     public StudentTransportDto getStudentTransport(String studentEmail) {
-        List<StudentTransportAssignmentEntity> all = studentAssignmentRepository.findAll();
-        StudentTransportAssignmentEntity assignment = all.isEmpty() ? null : all.get(0);
-
-        if (assignment == null) {
-            return StudentTransportDto.builder()
-                    .studentName("Student")
-                    .routeName("No route assigned")
-                    .tripStatus("NONE")
-                    .build();
+        if (portalAccess.actor().getRole() != Role.STUDENT) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Student account required");
         }
+        var student = portalAccess.children().stream().findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("Student profile not linked"));
+        var data = getParentChildTransport(studentEmail, student.getId());
+        return StudentTransportDto.builder().assigned(data.isAssigned()).assignmentStatus(data.getAssignmentStatus())
+                .studentId(student.getId()).studentName(student.getName()).admissionNo(student.getAdmissionNo())
+                .className(student.getClassName()).routeId(data.getRouteId()).routeName(data.getRouteName())
+                .pickupStopName(data.getStopName()).pickupTime(data.getScheduledPickupTime())
+                .dropStopName(data.getDropStopName()).dropTime(data.getScheduledDropTime()).tripType(data.getTripType())
+                .stopLatitude(data.getStopLatitude()).stopLongitude(data.getStopLongitude())
+                .dropLatitude(data.getDropLatitude()).dropLongitude(data.getDropLongitude())
+                .busId(data.getBusId()).busNumber(data.getBusNumber()).driverName(data.getDriverName()).driverPhone(data.getDriverPhone())
+                .busLatitude(data.getBusLatitude()).busLongitude(data.getBusLongitude()).busSpeedKmh(data.getBusSpeedKmh())
+                .lastGpsUpdate(data.getLastGpsUpdate()).gpsFresh(data.isGpsFresh()).tripId(data.getTripId())
+                .pickupStatus(data.getPickupStatus()).tripStatus(data.getTripStatus()).estimatedArrivalMinutes(data.getEstimatedArrivalMinutes())
+                .routeStops(data.isAssigned() ? stopRepository.findByRouteIdOrderByStopOrderAsc(data.getRouteId()).stream()
+                        .map(this::mapToRouteStopDto).toList() : List.of()).build();
+    }
 
-        TransportRouteEntity route = routeRepository.findById(assignment.getRouteId()).orElse(null);
-        List<RouteStopDto> stops = stopRepository.findByRouteIdOrderByStopOrderAsc(assignment.getRouteId()).stream()
-                .map(this::mapToRouteStopDto)
-                .collect(Collectors.toList());
+    private com.school.management.entity.StudentEntity validateStudentTransport(StudentAssignmentDto dto, String schoolId) {
+        var student = studentRepository.findByAdmissionNoIgnoreCase(Objects.toString(dto.getAdmissionNo(), "").trim())
+                .orElseThrow(() -> new BadRequestException("Select an enrolled student with a valid admission number"));
+        portalAccess.student(student.getAdmissionNo());
+        dto.setStudentId(student.getId());
+        dto.setAdmissionNo(student.getAdmissionNo());
+        dto.setStudentName(student.getName());
+        dto.setClassName(student.getClassName() + " (" + student.getSection() + ")");
+        var route = routeRepository.findByIdAndSchoolId(dto.getRouteId(), schoolId)
+                .orElseThrow(() -> new BadRequestException("Select a valid route"));
+        if (!"ACTIVE".equalsIgnoreCase(route.getStatus())) throw new BadRequestException("Route is inactive");
+        for (Long stopId : new Long[]{dto.getPickupStopId(), dto.getDropStopId()}) {
+            if (stopId != null && stopRepository.findById(stopId).filter(stop -> Objects.equals(stop.getRouteId(), route.getId())).isEmpty()) {
+                throw new BadRequestException("Pickup and drop stops must belong to the selected route");
+            }
+        }
+        if (dto.getStartDate() != null && dto.getEndDate() != null && dto.getEndDate().isBefore(dto.getStartDate())) {
+            throw new BadRequestException("End date must be on or after start date");
+        }
+        return student;
+    }
 
-        String pickName = assignment.getPickupStopId() != null ? stopRepository.findById(assignment.getPickupStopId()).map(RouteStopEntity::getStopName).orElse("Stop 1") : "Main Stop";
-        String dropName = assignment.getDropStopId() != null ? stopRepository.findById(assignment.getDropStopId()).map(RouteStopEntity::getStopName).orElse("Campus Gate") : "Campus Stop";
-
-        return StudentTransportDto.builder()
-                .studentId(assignment.getStudentId())
-                .studentName(assignment.getStudentName())
-                .admissionNo(assignment.getAdmissionNo())
-                .className(assignment.getClassName())
-                .routeId(assignment.getRouteId())
-                .routeName(route != null ? route.getRouteName() : "Route 1")
-                .pickupStopName(pickName)
-                .pickupTime(assignment.getPickupTime() != null ? assignment.getPickupTime() : "07:30 AM")
-                .dropStopName(dropName)
-                .dropTime(assignment.getDropTime() != null ? assignment.getDropTime() : "03:15 PM")
-                .busNumber("Bus 04")
-                .driverName("Ramesh Kumar")
-                .driverPhone("+91 98765 43210")
-                .tripStatus("IN_PROGRESS")
-                .estimatedArrivalMinutes(8)
-                .routeStops(stops)
-                .build();
+    private StudentTransportAssignmentEntity currentStudentAssignment(com.school.management.entity.StudentEntity student) {
+        return studentAssignmentRepository.findByStudentIdOrAdmissionNoIgnoreCaseOrderByIdDesc(student.getId(), student.getAdmissionNo())
+                .stream().filter(a -> a.getAdmissionNo() == null || a.getAdmissionNo().isBlank()
+                        ? Objects.equals(a.getStudentId(), student.getId())
+                        : a.getAdmissionNo().equalsIgnoreCase(student.getAdmissionNo()))
+                .findFirst().orElse(null);
     }
 
     // ==========================================

@@ -10,6 +10,16 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class ParentTransportDto {
+    private boolean assigned;
+    private String assignmentStatus;
+    private String tripType;
+    private Double stopLatitude;
+    private Double stopLongitude;
+    private String dropStopName;
+    private Double dropLatitude;
+    private Double dropLongitude;
+    private Long tripId;
+    private boolean gpsFresh;
     private Long studentId;
     private String studentName;
     private String admissionNo;
