@@ -2327,17 +2327,26 @@ public class TransportServiceImpl implements TransportService {
         var student = portalAccess.children().stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Student profile not linked"));
         var data = getParentChildTransport(studentEmail, student.getId());
+        // Student tracking must use actual driver telemetry, never the trip's
+        // initial/route-stop coordinates (which may be configured defaults).
+        LivePosition live = data.getTripId() == null ? null : livePositions.get(data.getTripId());
+        LocalDateTime utcNow = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        boolean fresh = data.isAssigned() && "IN_PROGRESS".equals(data.getTripStatus())
+                && live != null && live.point().getRecordedAt() != null
+                && !live.point().getRecordedAt().isBefore(utcNow.minusSeconds(60))
+                && !live.point().getRecordedAt().isAfter(utcNow.plusSeconds(30));
         return StudentTransportDto.builder().assigned(data.isAssigned()).assignmentStatus(data.getAssignmentStatus())
-                .studentId(student.getId()).studentName(student.getName()).admissionNo(student.getAdmissionNo())
+                .rollNo(student.getRollNo()).studentId(student.getId()).studentName(student.getName()).admissionNo(student.getAdmissionNo())
                 .className(student.getClassName()).routeId(data.getRouteId()).routeName(data.getRouteName())
                 .pickupStopName(data.getStopName()).pickupTime(data.getScheduledPickupTime())
                 .dropStopName(data.getDropStopName()).dropTime(data.getScheduledDropTime()).tripType(data.getTripType())
                 .stopLatitude(data.getStopLatitude()).stopLongitude(data.getStopLongitude())
                 .dropLatitude(data.getDropLatitude()).dropLongitude(data.getDropLongitude())
                 .busId(data.getBusId()).busNumber(data.getBusNumber()).driverName(data.getDriverName()).driverPhone(data.getDriverPhone())
-                .busLatitude(data.getBusLatitude()).busLongitude(data.getBusLongitude()).busSpeedKmh(data.getBusSpeedKmh())
-                .lastGpsUpdate(data.getLastGpsUpdate()).gpsFresh(data.isGpsFresh()).tripId(data.getTripId())
-                .pickupStatus(data.getPickupStatus()).tripStatus(data.getTripStatus()).estimatedArrivalMinutes(data.getEstimatedArrivalMinutes())
+                .busLatitude(fresh ? live.point().getLatitude() : null).busLongitude(fresh ? live.point().getLongitude() : null)
+                .busSpeedKmh(fresh ? live.point().getSpeedKmh() : null)
+                .lastGpsUpdate(live == null ? null : live.point().getRecordedAt()).gpsFresh(fresh).tripId(data.getTripId())
+                .pickupStatus(data.getPickupStatus()).tripStatus(data.getTripStatus()).estimatedArrivalMinutes(fresh ? data.getEstimatedArrivalMinutes() : null)
                 .routeStops(data.isAssigned() ? stopRepository.findByRouteIdOrderByStopOrderAsc(data.getRouteId()).stream()
                         .map(this::mapToRouteStopDto).toList() : List.of()).build();
     }

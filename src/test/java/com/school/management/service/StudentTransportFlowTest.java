@@ -43,7 +43,7 @@ class StudentTransportFlowTest {
  @Mock DriverBusAllocationService allocations;
  @Mock PortalAccessService access;
  @InjectMocks TransportServiceImpl service;
- final StudentEntity student = StudentEntity.builder().id(42L).admissionNo("ADM42").name("Rudra").className("7").section("A").build();
+ final StudentEntity student = StudentEntity.builder().id(42L).admissionNo("ADM42").name("Rudra").rollNo("31").className("7").section("A").build();
  final LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
 
  void login() {
@@ -90,11 +90,20 @@ class StudentTransportFlowTest {
   when(trips.findFirstByRouteIdAndSchoolIdAndStatus(9L,"SCH-001","IN_PROGRESS")).thenReturn(Optional.of(trip));
   when(buses.findById(20L)).thenReturn(Optional.of(BusEntity.builder().id(20L).busNumber("BUS20").build()));
   when(drivers.findById(30L)).thenReturn(Optional.of(DriverProfileEntity.builder().id(30L).name("Driver 30").phone("9999999999").build()));
+  // Trip-start coordinates can be configured defaults. They are not driver GPS.
+  var beforeGps=service.getStudentTransport("ignored");
+  assertFalse(beforeGps.isGpsFresh()); assertNull(beforeGps.getBusLatitude());
+  when(drivers.findByEmailIgnoreCase("driver30@test.local")).thenReturn(Optional.of(DriverProfileEntity.builder().id(30L).email("driver30@test.local").build()));
+  when(trips.findById(12L)).thenReturn(Optional.of(trip));
+  var point=TripDtos.GpsPointDto.builder().latitude(28.7).longitude(77.2).speedKmh(20.0)
+    .recordedAt(LocalDateTime.now(ZoneOffset.UTC)).build();
+  service.publishLiveLocation(12L,"driver30@test.local",point);
   var data=service.getStudentTransport("ignored");
+  assertEquals("31",data.getRollNo());
   assertTrue(data.isAssigned()); assertEquals("BUS20",data.getBusNumber()); assertEquals("Driver 30",data.getDriverName());
   assertEquals("Park",data.getPickupStopName()); assertEquals("07:20 AM",data.getPickupTime());
   assertEquals(28.7,data.getBusLatitude()); assertTrue(data.isGpsFresh()); assertEquals(4,data.getEstimatedArrivalMinutes());
-  trip.setLastLocationTime(LocalDateTime.now().minusMinutes(2));
+  point.setRecordedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(2));
   data=service.getStudentTransport("ignored"); assertFalse(data.isGpsFresh()); assertNull(data.getBusLatitude()); assertNull(data.getEstimatedArrivalMinutes());
  }
  @Test void creatingAssignmentUsesRealStudentIdAndRejectsWrongRouteStop() {

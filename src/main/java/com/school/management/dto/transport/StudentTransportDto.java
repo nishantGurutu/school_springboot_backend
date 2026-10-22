@@ -21,6 +21,7 @@ public class StudentTransportDto {
     private Double dropLongitude;
     private Long tripId;
     private boolean gpsFresh;
+    private String rollNo;
     private Long studentId;
     private String studentName;
     private String admissionNo;
