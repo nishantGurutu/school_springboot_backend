@@ -219,22 +219,11 @@ public class MobileAppController {
                 banners.add(bm);
             }
 
-            // 2. Dynamic Student Assigned Subjects (Selected during Add Student in Dashboard)
+            // 2. Subjects belong to the student's enrolled class.
             List<Map<String, Object>> subjects = new ArrayList<>();
             List<SubjectEntity> studentSubjects = new ArrayList<>();
-            if (student != null && student.getSubjectIds() != null && !student.getSubjectIds().isBlank()) {
-                try {
-                    List<Long> sIds = Arrays.stream(student.getSubjectIds().split(","))
-                            .map(String::trim)
-                            .filter(s -> !s.isEmpty())
-                            .map(Long::parseLong)
-                            .toList();
-                    if (!sIds.isEmpty()) {
-                        studentSubjects = subjectRepository.findAllById(sIds);
-                    }
-                } catch (Exception ex) {
-                    log.warn("Error parsing student subject IDs: {}", ex.getMessage());
-                }
+            if (student != null) {
+                studentSubjects = curriculumService.getStudentSubjects(student);
             }
             for (int i = 0; i < studentSubjects.size(); i++) {
                 subjects.add(mapSubjectEntityToDashboardMap(studentSubjects.get(i), i));
@@ -448,6 +437,15 @@ public class MobileAppController {
     // ==========================================
     // 1. PROFILE ENDPOINTS
     // ==========================================
+    @GetMapping("/student/subjects")
+    @Operation(summary = "Get active subjects belonging to the enrolled student's class")
+    public ResponseEntity<List<com.school.management.dto.SubjectResponse>> getStudentSubjects(
+            @RequestParam(required = false) String admissionNo) {
+        StudentEntity student = assignmentStudent(admissionNo);
+        return ResponseEntity.ok(curriculumService.getStudentSubjects(student).stream()
+                .map(com.school.management.dto.SubjectResponse::fromEntity).toList());
+    }
+
     @GetMapping("/student/guardians")
     @Operation(summary = "Get all dashboard guardians linked to the authenticated student or selected linked child")
     public ResponseEntity<List<com.school.management.dto.GuardianResponse>> getStudentGuardians(

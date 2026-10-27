@@ -71,6 +71,15 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.valueOf(ex.getStatusCode().value()), ex.getReason());
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Object>> handleDataIntegrityViolation(org.springframework.dao.DataIntegrityViolationException ex) {
+        String msg = ex.getMessage();
+        if (msg != null && (msg.contains("violates foreign key constraint") || msg.contains("foreign key"))) {
+            return build(HttpStatus.CONFLICT, "This item cannot be deleted because it is still referenced by other records (such as teachers or curriculum).");
+        }
+        return build(HttpStatus.CONFLICT, "Database constraint error: " + (ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : "operation violates data integrity"));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiResponse<Object>> handleRuntimeException(RuntimeException ex) {
         if (ex.getMessage() != null && ex.getMessage().contains("already")) {

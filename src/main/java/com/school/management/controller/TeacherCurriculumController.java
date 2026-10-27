@@ -238,7 +238,7 @@ public class TeacherCurriculumController {
     // Topic
     @PostMapping(value = "/notes", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload and attach note to a Chapter or Topic (with file)")
-    public ResponseEntity<TopicNoteEntity> addNoteWithFile(
+    public ResponseEntity<Map<String, Object>> addNoteWithFile(
             @RequestParam(value = "chapterId", required = false) Long chapterId,
             @RequestParam(value = "topicId", required = false) Long topicId,
             @RequestParam("title") String title,
@@ -255,13 +255,13 @@ public class TeacherCurriculumController {
         TopicNoteEntity note = curriculumService.addNote(
                 chapterId, topicId, title, description, contentHtml, file, directUrl, isDownloadable, teacherId,
                 teacherName);
-        return ResponseEntity.ok(note);
+        return ResponseEntity.ok(curriculumService.mapNoteToDto(note));
     }
 
     // 10. Add note as JSON (e.g. text/rich notes or URL reference)
     @PostMapping("/notes/json")
     @Operation(summary = "Add note to a Chapter or Topic without uploading binary file")
-    public ResponseEntity<TopicNoteEntity> addNoteJson(@RequestBody Map<String, Object> req) {
+    public ResponseEntity<Map<String, Object>> addNoteJson(@RequestBody Map<String, Object> req) {
         Long chapterId = req.get("chapterId") != null && !req.get("chapterId").toString().isBlank()
                 ? Long.valueOf(req.get("chapterId").toString())
                 : null;
@@ -271,7 +271,7 @@ public class TeacherCurriculumController {
         String title = (String) req.get("title");
         String desc = (String) req.get("description");
         String contentHtml = (String) req.get("contentHtml");
-        String directUrl = (String) req.get("fileUrl");
+        String directUrl = (String) (req.get("directUrl") != null ? req.get("directUrl") : req.get("fileUrl"));
         Boolean isDownloadable = req.get("isDownloadable") != null
                 ? Boolean.valueOf(req.get("isDownloadable").toString())
                 : true;
@@ -282,7 +282,7 @@ public class TeacherCurriculumController {
 
         TopicNoteEntity note = curriculumService.addNote(
                 chapterId, topicId, title, desc, contentHtml, null, directUrl, isDownloadable, teacherId, teacherName);
-        return ResponseEntity.ok(note);
+        return ResponseEntity.ok(curriculumService.mapNoteToDto(note));
     }
 
     // 11. Delete note

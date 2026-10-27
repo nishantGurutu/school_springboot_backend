@@ -13,12 +13,15 @@ public class SubjectResponse {
     private String code;
     private String status;
 
+    private String className;
+
     public static SubjectResponse fromEntity(SubjectEntity entity) {
         return SubjectResponse.builder()
                 .id(entity.getId())
                 .name(entity.getName())
                 .code(entity.getCode())
                 .status(entity.getStatus())
+                .className(entity.getClassName())
                 .build();
     }
 }

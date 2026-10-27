@@ -13,4 +13,6 @@ public class SubjectRequest {
     private String code;
 
     private String status;
+
+    private String className;
 }

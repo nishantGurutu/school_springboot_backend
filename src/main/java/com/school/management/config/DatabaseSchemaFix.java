@@ -91,6 +91,110 @@ public class DatabaseSchemaFix {
                         "PRIMARY KEY (teacher_id, subject_id))");
             } catch (Exception ignored) {}
 
+            // Ensure teacher_subjects foreign keys cascade delete when a subject or teacher is deleted
+            try {
+                jdbcTemplate.execute("DELETE FROM teacher_subjects WHERE subject_id NOT IN (SELECT id FROM subjects)");
+                jdbcTemplate.execute("DELETE FROM teacher_subjects WHERE teacher_id NOT IN (SELECT id FROM teachers)");
+
+                jdbcTemplate.execute("DO $$\n" +
+                        "DECLARE r RECORD;\n" +
+                        "BEGIN\n" +
+                        "  FOR r IN (\n" +
+                        "    SELECT tc.constraint_name\n" +
+                        "    FROM information_schema.table_constraints tc\n" +
+                        "    JOIN information_schema.key_column_usage kcu\n" +
+                        "      ON tc.constraint_name = kcu.constraint_name\n" +
+                        "      AND tc.table_schema = kcu.table_schema\n" +
+                        "    WHERE tc.constraint_type = 'FOREIGN KEY'\n" +
+                        "      AND tc.table_name = 'teacher_subjects'\n" +
+                        "      AND kcu.column_name = 'subject_id'\n" +
+                        "  ) LOOP\n" +
+                        "    EXECUTE 'ALTER TABLE teacher_subjects DROP CONSTRAINT IF EXISTS ' || quote_ident(r.constraint_name);\n" +
+                        "  END LOOP;\n" +
+                        "END $$;");
+
+                jdbcTemplate.execute("ALTER TABLE teacher_subjects ADD CONSTRAINT fk_teacher_subjects_subject " +
+                        "FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE");
+            } catch (Exception e) {
+                log.warn("Notice updating teacher_subjects subject_id foreign key: {}", e.getMessage());
+            }
+
+            try {
+                jdbcTemplate.execute("DO $$\n" +
+                        "DECLARE r RECORD;\n" +
+                        "BEGIN\n" +
+                        "  FOR r IN (\n" +
+                        "    SELECT tc.constraint_name\n" +
+                        "    FROM information_schema.table_constraints tc\n" +
+                        "    JOIN information_schema.key_column_usage kcu\n" +
+                        "      ON tc.constraint_name = kcu.constraint_name\n" +
+                        "      AND tc.table_schema = kcu.table_schema\n" +
+                        "    WHERE tc.constraint_type = 'FOREIGN KEY'\n" +
+                        "      AND tc.table_name = 'teacher_subjects'\n" +
+                        "      AND kcu.column_name = 'teacher_id'\n" +
+                        "  ) LOOP\n" +
+                        "    EXECUTE 'ALTER TABLE teacher_subjects DROP CONSTRAINT IF EXISTS ' || quote_ident(r.constraint_name);\n" +
+                        "  END LOOP;\n" +
+                        "END $$;");
+
+                jdbcTemplate.execute("ALTER TABLE teacher_subjects ADD CONSTRAINT fk_teacher_subjects_teacher " +
+                        "FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE");
+            } catch (Exception e) {
+                log.warn("Notice updating teacher_subjects teacher_id foreign key: {}", e.getMessage());
+            }
+
+            // Ensure teacher_classes foreign keys cascade delete when a class or teacher is deleted
+            try {
+                jdbcTemplate.execute("DELETE FROM teacher_classes WHERE class_id NOT IN (SELECT id FROM school_classes)");
+                jdbcTemplate.execute("DELETE FROM teacher_classes WHERE teacher_id NOT IN (SELECT id FROM teachers)");
+
+                jdbcTemplate.execute("DO $$\n" +
+                        "DECLARE r RECORD;\n" +
+                        "BEGIN\n" +
+                        "  FOR r IN (\n" +
+                        "    SELECT tc.constraint_name\n" +
+                        "    FROM information_schema.table_constraints tc\n" +
+                        "    JOIN information_schema.key_column_usage kcu\n" +
+                        "      ON tc.constraint_name = kcu.constraint_name\n" +
+                        "      AND tc.table_schema = kcu.table_schema\n" +
+                        "    WHERE tc.constraint_type = 'FOREIGN KEY'\n" +
+                        "      AND tc.table_name = 'teacher_classes'\n" +
+                        "      AND kcu.column_name = 'class_id'\n" +
+                        "  ) LOOP\n" +
+                        "    EXECUTE 'ALTER TABLE teacher_classes DROP CONSTRAINT IF EXISTS ' || quote_ident(r.constraint_name);\n" +
+                        "  END LOOP;\n" +
+                        "END $$;");
+
+                jdbcTemplate.execute("ALTER TABLE teacher_classes ADD CONSTRAINT fk_teacher_classes_class " +
+                        "FOREIGN KEY (class_id) REFERENCES school_classes(id) ON DELETE CASCADE");
+            } catch (Exception e) {
+                log.warn("Notice updating teacher_classes class_id foreign key: {}", e.getMessage());
+            }
+
+            try {
+                jdbcTemplate.execute("DO $$\n" +
+                        "DECLARE r RECORD;\n" +
+                        "BEGIN\n" +
+                        "  FOR r IN (\n" +
+                        "    SELECT tc.constraint_name\n" +
+                        "    FROM information_schema.table_constraints tc\n" +
+                        "    JOIN information_schema.key_column_usage kcu\n" +
+                        "      ON tc.constraint_name = kcu.constraint_name\n" +
+                        "      AND tc.table_schema = kcu.table_schema\n" +
+                        "    WHERE tc.constraint_type = 'FOREIGN KEY'\n" +
+                        "      AND tc.table_name = 'teacher_classes'\n" +
+                        "      AND kcu.column_name = 'teacher_id'\n" +
+                        "  ) LOOP\n" +
+                        "    EXECUTE 'ALTER TABLE teacher_classes DROP CONSTRAINT IF EXISTS ' || quote_ident(r.constraint_name);\n" +
+                        "  END LOOP;\n" +
+                        "END $$;");
+
+                jdbcTemplate.execute("ALTER TABLE teacher_classes ADD CONSTRAINT fk_teacher_classes_teacher " +
+                        "FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE");
+            } catch (Exception e) {
+                log.warn("Notice updating teacher_classes teacher_id foreign key: {}", e.getMessage());
+            }
+
             // Schema additions for teacher assignments and student submissions
             try {
                 jdbcTemplate.execute("ALTER TABLE homeworks ADD COLUMN IF NOT EXISTS teacher_id BIGINT");

@@ -30,7 +30,7 @@ class StudentCurriculumTest {
 
     @Test void noMatchingChapterReturnsEmptyInsteadOfAnotherClass() {
         student();
-        var subject = SubjectEntity.builder().id(1L).name("Math").build();
+        var subject = SubjectEntity.builder().id(1L).name("Math").className("10").build();
         when(subjectRepository.findById(1L)).thenReturn(Optional.of(subject));
         when(chapterRepository.findBySubjectIdOrderByDisplayOrderAsc(1L)).thenReturn(List.of(SubjectChapterEntity.builder().id(8L).subject(subject).className("1").build()));
         var result = service.getSubjectCurriculumForStudent(1L, "1");
@@ -40,7 +40,7 @@ class StudentCurriculumTest {
 
     @Test void topicFromAnotherClassIsForbidden() {
         student();
-        var subject = SubjectEntity.builder().id(1L).name("Math").build();
+        var subject = SubjectEntity.builder().id(1L).name("Math").className("10").build();
         var chapter = SubjectChapterEntity.builder().id(8L).subject(subject).className("9").build();
         when(topicRepository.findById(4L)).thenReturn(Optional.of(SubjectTopicEntity.builder().id(4L).subject(subject).chapter(chapter).build()));
         assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.getTopicNotesForStudent(4L)).getStatusCode().value());
@@ -49,7 +49,7 @@ class StudentCurriculumTest {
 
     @Test void ownTopicReturnsTeacherHtmlAndAttachment() {
         student();
-        var subject = SubjectEntity.builder().id(1L).name("Math").build();
+        var subject = SubjectEntity.builder().id(1L).name("Math").className("10").build();
         var chapter = SubjectChapterEntity.builder().id(8L).subject(subject).className("10").chapterTitle("Fractions").build();
         var topic = SubjectTopicEntity.builder().id(4L).title("Addition").subject(subject).chapter(chapter).build();
         when(topicRepository.findById(4L)).thenReturn(Optional.of(topic));

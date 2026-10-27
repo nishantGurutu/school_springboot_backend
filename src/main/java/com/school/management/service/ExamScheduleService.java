@@ -6,6 +6,10 @@ import com.school.management.entity.ExamScheduleEntity;
 import com.school.management.exceptions.BadRequestException;
 import com.school.management.exceptions.ResourceNotFoundException;
 import com.school.management.repository.ExamScheduleRepository;
+import com.school.management.repository.SchoolClassRepository;
+import com.school.management.repository.SectionRepository;
+import com.school.management.repository.SubjectRepository;
+import com.school.management.repository.ExamRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +22,10 @@ import java.util.List;
 public class ExamScheduleService {
 
     private final ExamScheduleRepository examScheduleRepository;
+    private final SchoolClassRepository schoolClassRepository;
+    private final SectionRepository sectionRepository;
+    private final SubjectRepository subjectRepository;
+    private final ExamRepository examRepository;
 
     @Transactional(readOnly = true)
     public List<ExamScheduleResponse> getAll() {
@@ -27,11 +35,10 @@ public class ExamScheduleService {
     }
 
     public ExamScheduleResponse create(ExamScheduleRequest request) {
-        String examName = request.getExamName() != null ? request.getExamName().trim() : null;
-        String className = (request.getClassName() != null && !request.getClassName().isBlank())
-                ? request.getClassName().trim()
-                : (examName != null ? examName : "Class 1");
-        String section = request.getSection() != null ? request.getSection().trim() : null;
+        validateSelection(request);
+        String examName = request.getExamName().trim();
+        String className = request.getClassName().trim();
+        String section = request.getSection().trim();
         String subject = requireNonBlank(request.getSubject(), "Subject is required").trim();
 
         ExamScheduleEntity entity = ExamScheduleEntity.builder()
@@ -50,6 +57,7 @@ public class ExamScheduleService {
 
     public ExamScheduleResponse update(Long id, ExamScheduleRequest request) {
         ExamScheduleEntity entity = findByIdOrThrow(id);
+        validateSelection(request);
         if (request.getExamName() != null) {
             entity.setExamName(request.getExamName().trim());
         }
@@ -73,6 +81,26 @@ public class ExamScheduleService {
     public void delete(Long id) {
         ExamScheduleEntity entity = findByIdOrThrow(id);
         examScheduleRepository.delete(entity);
+    }
+
+    private void validateSelection(ExamScheduleRequest request) {
+        String className = requireNonBlank(request.getClassName(), "Class is required").trim();
+        String section = requireNonBlank(request.getSection(), "Section is required").trim();
+        String subject = requireNonBlank(request.getSubject(), "Subject is required").trim();
+        String exam = requireNonBlank(request.getExamName(), "Exam is required").trim();
+        boolean linkedSection = schoolClassRepository.findAll().stream().anyMatch(c -> {
+            if (!className.equalsIgnoreCase(c.getName())) return false;
+            String assignedSection = c.getSection();
+            if ((assignedSection == null || assignedSection.isBlank()) && c.getSectionId() != null) {
+                assignedSection = sectionRepository.findById(c.getSectionId()).map(s -> s.getName()).orElse(null);
+            }
+            return assignedSection != null && section.equalsIgnoreCase(assignedSection.trim());
+        });
+        if (!linkedSection) throw new BadRequestException("Section does not belong to the selected class");
+        boolean linkedSubject = subjectRepository.findByClassNameIgnoreCase(className).stream()
+                .anyMatch(s -> subject.equalsIgnoreCase(s.getName()));
+        if (!linkedSubject) throw new BadRequestException("Subject does not belong to the selected class");
+        if (!examRepository.existsByName(exam)) throw new BadRequestException("Select an existing school exam");
     }
 
     private String requireNonBlank(String value, String message) {

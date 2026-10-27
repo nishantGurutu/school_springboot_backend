@@ -55,10 +55,21 @@ public class CurriculumService {
 
     private void checkSubject(StudentEntity student, SubjectEntity subject) {
         if (student == null) return;
-        boolean assigned = student.getSubjectIds() != null && !student.getSubjectIds().isBlank()
-                ? Arrays.stream(student.getSubjectIds().split(",")).anyMatch(id -> id.trim().equals(subject.getId().toString()))
-                : classMatches(subject.getClassName(), student.getClassName());
+        boolean assigned = student.getClassName() != null && !student.getClassName().isBlank()
+                && subject.getClassName() != null
+                && student.getClassName().trim().equalsIgnoreCase(subject.getClassName().trim())
+                && "Active".equalsIgnoreCase(subject.getStatus());
         if (!assigned) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Subject is not assigned to you");
+    }
+
+    @Transactional(readOnly = true)
+    public List<SubjectEntity> getStudentSubjects(StudentEntity student) {
+        if (student.getClassName() == null || student.getClassName().isBlank()) return List.of();
+        return subjectRepository.findByClassNameIgnoreCase(student.getClassName().trim()).stream()
+                .filter(subject -> "Active".equalsIgnoreCase(subject.getStatus()))
+                .sorted(Comparator.comparing(SubjectEntity::getName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(SubjectEntity::getId))
+                .toList();
     }
 
     private void checkChapter(StudentEntity student, SubjectChapterEntity chapter) {
@@ -81,10 +92,7 @@ public class CurriculumService {
     public List<SubjectEntity> getTeacherSubjects(Long teacherId, String teacherEmail, String className) {
         // 1. If className specified, check if subjects specifically match this class
         if (className != null && !className.isBlank() && !"all".equalsIgnoreCase(className.trim())) {
-            List<SubjectEntity> classSubjects = subjectRepository.findByClassNameIgnoreCaseOrClassNameIsNull(className.trim());
-            if (!classSubjects.isEmpty()) {
-                return classSubjects;
-            }
+            return subjectRepository.findByClassNameIgnoreCase(className.trim());
         }
 
         TeacherEntity teacher = null;
@@ -217,6 +225,7 @@ public class CurriculumService {
         String effectiveClass = (className != null && !className.isBlank())
                 ? className.trim()
                 : (subject.getClassName() != null && !subject.getClassName().isBlank() ? subject.getClassName().trim() : "All");
+        requireSubjectClass(subject, effectiveClass);
 
         SubjectChapterEntity entity = SubjectChapterEntity.builder()
                 .subject(subject)
@@ -236,6 +245,10 @@ public class CurriculumService {
     public SubjectChapterEntity updateChapter(Long id, String chapterNumber, String title, String desc, Integer order, String className, Long subjectId) {
         SubjectChapterEntity entity = chapterRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Chapter not found: " + id));
+        SubjectEntity targetSubject = subjectId == null ? entity.getSubject() : subjectRepository.findById(subjectId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subject not found: " + subjectId));
+        String targetClass = className == null || className.isBlank() ? entity.getClassName() : className.trim();
+        requireSubjectClass(targetSubject, targetClass);
         if (chapterNumber != null && !chapterNumber.isBlank()) entity.setChapterNumber(chapterNumber.trim());
         if (title != null && !title.isBlank()) entity.setChapterTitle(title.trim());
         if (desc != null) entity.setDescription(desc);
@@ -251,6 +264,13 @@ public class CurriculumService {
 
     public void deleteChapter(Long id) {
         chapterRepository.deleteById(id);
+    }
+
+    private void requireSubjectClass(SubjectEntity subject, String className) {
+        if (subject == null || subject.getClassName() == null || subject.getClassName().isBlank()
+                || className == null || !subject.getClassName().trim().equalsIgnoreCase(className.trim())) {
+            throw new com.school.management.exceptions.BadRequestException("Subject does not belong to the selected class");
+        }
     }
 
     public SubjectTopicEntity createTopic(Long chapterId, String title, String desc, String difficulty, Integer minutes, Integer order) {
@@ -490,9 +510,13 @@ public class CurriculumService {
         return response;
     }
 
-    private Map<String, Object> mapNoteToDto(TopicNoteEntity note) {
+    public Map<String, Object> mapNoteToDto(TopicNoteEntity note) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", note.getId());
+        m.put("chapterId", note.getChapter() == null ? null : note.getChapter().getId());
+        m.put("subjectId", note.getSubject() == null ? null : note.getSubject().getId());
+        m.put("topicId", note.getTopic() == null ? null : note.getTopic().getId());
+        m.put("className", note.getClassName());
         m.put("title", note.getTitle());
         m.put("description", note.getDescription());
         m.put("contentHtml", note.getContentHtml());
