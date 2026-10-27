@@ -90,7 +90,7 @@ public class GuardianServiceImpl implements GuardianService {
     @Override
     @Transactional(readOnly = true)
     public List<GuardianResponse> getByStudent(String studentAdmissionNo) {
-        return guardianRepository.findByStudentAdmissionNo(studentAdmissionNo).stream()
+        return guardianRepository.findLinkedToStudent(studentAdmissionNo).stream()
                 .map(g -> GuardianResponse.fromEntity(g, resolveStudentName(g.getStudentAdmissionNo())))
                 .collect(Collectors.toList());
     }

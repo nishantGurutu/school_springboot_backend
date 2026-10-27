@@ -448,6 +448,18 @@ public class MobileAppController {
     // ==========================================
     // 1. PROFILE ENDPOINTS
     // ==========================================
+    @GetMapping("/student/guardians")
+    @Operation(summary = "Get all dashboard guardians linked to the authenticated student or selected linked child")
+    public ResponseEntity<List<com.school.management.dto.GuardianResponse>> getStudentGuardians(
+            @RequestParam(required = false) String admissionNo) {
+        StudentEntity student = assignmentStudent(admissionNo);
+        if (student.getAdmissionNo() == null || student.getAdmissionNo().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Student admission number missing");
+        }
+        return ResponseEntity.ok(guardianRepository.findLinkedToStudent(student.getAdmissionNo().trim()).stream()
+                .map(g -> com.school.management.dto.GuardianResponse.fromEntity(g, student.getName())).toList());
+    }
+
     @GetMapping("/profile/me")
     @Operation(summary = "Get current mobile user profile with role-specific details")
     public ResponseEntity<Map<String, Object>> getProfile() {

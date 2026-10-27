@@ -24,6 +24,19 @@ public interface GuardianRepository extends JpaRepository<GuardianEntity, Long> 
 
     List<GuardianEntity> findByStudentAdmissionNo(String studentAdmissionNo);
 
+    @Query("SELECT g FROM GuardianEntity g WHERE " +
+            "LOCATE(LOWER(:admissionNo), LOWER(g.studentAdmissionNo)) > 0 ORDER BY g.id")
+    List<GuardianEntity> findStudentLinkCandidates(@Param("admissionNo") String admissionNo);
+
+    default List<GuardianEntity> findLinkedToStudent(String admissionNo) {
+        if (admissionNo == null || admissionNo.isBlank()) return List.of();
+        String admission = admissionNo.trim();
+        return findStudentLinkCandidates(admission).stream()
+                .filter(g -> java.util.Arrays.stream(g.getStudentAdmissionNo().split(","))
+                        .anyMatch(part -> part.trim().equalsIgnoreCase(admission)))
+                .toList();
+    }
+
     Page<GuardianEntity> findByGuardianType(com.school.management.domain.guardian.GuardianType type, Pageable pageable);
 
     long countByGuardianType(com.school.management.domain.guardian.GuardianType type);
