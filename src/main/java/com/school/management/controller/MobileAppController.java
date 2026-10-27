@@ -556,7 +556,15 @@ public class MobileAppController {
     @GetMapping("/holidays")
     @Operation(summary = "Get school holidays for mobile app")
     public ResponseEntity<List<HolidayResponse>> getMobileHolidays() {
-        return ResponseEntity.ok(holidayService.getAll());
+        Role role = securityUtil.getCurrentUser().map(UserEntity::getRole).orElse(null);
+        return ResponseEntity.ok(holidayService.getAll().stream().filter(holiday -> {
+            String target = holiday.getTarget() == null ? "ALL" : holiday.getTarget().trim().toUpperCase(Locale.ROOT);
+            if (target.isEmpty() || target.equals("ALL")) return true;
+            if (role == null) return false;
+            if (Set.of(Role.ADMIN, Role.MASTER_ADMIN, Role.SUPER_ADMIN, Role.PRINCIPAL).contains(role)) return true;
+            if (role == Role.STUDENT || role == Role.PARENT) return Set.of("STUDENT", "STUDENTS").contains(target);
+            return Set.of("STAFF", "TEACHER", "TEACHERS").contains(target);
+        }).sorted(Comparator.comparing(HolidayResponse::getDate, Comparator.nullsLast(String::compareTo))).toList());
     }
 
     // ==========================================
