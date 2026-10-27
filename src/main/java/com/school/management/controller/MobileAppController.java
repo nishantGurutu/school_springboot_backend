@@ -52,6 +52,7 @@ public class MobileAppController {
     private final BannerRepository bannerRepository;
     private final GalleryAlbumRepository galleryAlbumRepository;
     private final com.school.management.service.CurriculumService curriculumService;
+    private final com.school.management.service.StudentTeachersService studentTeachersService;
 
     private final HomeworkSubmissionRepository homeworkSubmissionRepository;
     private final SubjectChapterRepository subjectChapterRepository;
@@ -437,6 +438,13 @@ public class MobileAppController {
     // ==========================================
     // 1. PROFILE ENDPOINTS
     // ==========================================
+    @GetMapping("/student/teachers")
+    @Operation(summary = "Get teachers assigned to the authenticated student's class and section")
+    public ResponseEntity<List<Map<String,Object>>> getStudentTeachers(
+            @RequestParam(required=false) String admissionNo) {
+        return ResponseEntity.ok(studentTeachersService.getTeachers(assignmentStudent(admissionNo)));
+    }
+
     @GetMapping("/student/subjects")
     @Operation(summary = "Get active subjects belonging to the enrolled student's class")
     public ResponseEntity<List<com.school.management.dto.SubjectResponse>> getStudentSubjects(
