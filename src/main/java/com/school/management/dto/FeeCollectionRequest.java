@@ -7,10 +7,17 @@ import lombok.Data;
 @Data
 public class FeeCollectionRequest {
 
+    private String section;
+    private Long feeTypeId;
+    private String feeType;
+    private Long discountId;
+    private String discount;
+    private String discountAmount;
+
+
     @Size(max = 32, message = "Admission number must be at most 32 characters")
     private String admissionNo;
 
-    @NotBlank(message = "Name is required")
     @Size(max = 64, message = "Name must be at most 64 characters")
     private String name;
 

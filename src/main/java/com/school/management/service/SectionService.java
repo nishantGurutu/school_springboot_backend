@@ -21,6 +21,22 @@ import java.util.List;
 public class SectionService {
 
     private final SectionRepository sectionRepository;
+    private final com.school.management.repository.SchoolClassRepository schoolClasses;
+
+    @Transactional(readOnly = true)
+    public List<SectionResponse> getForClass(String className) {
+        var classes = schoolClasses.findByNameIgnoreCase(className.trim()).stream()
+                .filter(c -> "Active".equalsIgnoreCase(c.getStatus())).toList();
+        var names = classes.stream().map(com.school.management.entity.SchoolClassEntity::getSection)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        var ids = classes.stream().map(com.school.management.entity.SchoolClassEntity::getSectionId)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        return sectionRepository.findAll().stream()
+                .filter(section -> "Active".equalsIgnoreCase(section.getStatus()))
+                .filter(section -> ids.contains(section.getId()) || names.stream().anyMatch(n -> n.equalsIgnoreCase(section.getName())))
+                .map(SectionResponse::fromEntity).toList();
+    }
+
 
     public List<SectionResponse> getAll() {
         return sectionRepository.findAll().stream()

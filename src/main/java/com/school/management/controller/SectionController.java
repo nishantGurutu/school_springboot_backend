@@ -23,8 +23,8 @@ public class SectionController {
 
     @GetMapping
     @Operation(summary = "List all sections")
-    public ResponseEntity<List<SectionResponse>> getAll() {
-        return ResponseEntity.ok(sectionService.getAll());
+    public ResponseEntity<List<SectionResponse>> getAll(@RequestParam(required = false) String className) {
+        return ResponseEntity.ok(className == null ? sectionService.getAll() : sectionService.getForClass(className));
     }
 
     @GetMapping("/{id}")

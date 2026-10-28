@@ -41,6 +41,11 @@ public class AccountController {
         return ResponseEntity.status(HttpStatus.CREATED).body(accountService.create(request));
     }
 
+    @PutMapping("/transactions/{id}")
+    public ResponseEntity<AccountResponse> update(@PathVariable Long id, @Valid @RequestBody AccountRequest request) {
+        return ResponseEntity.ok(accountService.update(id, request));
+    }
+
     @DeleteMapping("/transactions/{id}")
     @Operation(summary = "Delete a transaction")
     public ResponseEntity<Void> delete(@PathVariable Long id) {

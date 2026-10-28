@@ -9,6 +9,8 @@ public class AccountRequest {
 
     @NotBlank(message = "Transaction type is required")
     private String transactionType;
+    private String name;
+    private String paymentType;
 
     @NotNull(message = "Amount is required")
     private Double amount;

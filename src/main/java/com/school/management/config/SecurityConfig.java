@@ -61,11 +61,15 @@ public class SecurityConfig {
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "PARENT")
 
                         // School operations modules
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/classes/classes", "/api/classes/sections")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "ACCOUNTANT")
                         .requestMatchers("/api/classes/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
                         .requestMatchers("/api/exams/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/fees/payment-types")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT")
                         .requestMatchers("/api/fees/**")
-                        .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "TEACHER", "PARENT")
+                        .hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "PRINCIPAL", "ACCOUNTANT", "TEACHER", "PARENT")
                         .requestMatchers("/api/attendance/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
                         .requestMatchers("/api/leaves/**")
@@ -82,7 +86,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/staff/**").hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL")
                         .requestMatchers("/api/designations/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER")
-                        .requestMatchers("/api/holidays/**").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/holidays/**").permitAll()
+                        .requestMatchers("/api/holidays/**").hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN")
                         .requestMatchers("/api/timetable/**")
                         .hasAnyRole("MASTER_ADMIN", "ADMIN", "PRINCIPAL", "TEACHER", "STUDENT", "PARENT")
 

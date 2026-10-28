@@ -42,6 +42,11 @@ public class StaffService {
 
     @Transactional
     public StaffResponse create(StaffRequest request) {
+        if (request.getEmail() != null && !request.getEmail().isBlank()
+                && staffRepository.existsByEmailIgnoreCase(request.getEmail().trim())) {
+            throw new com.school.management.exceptions.DuplicateResourceException(
+                    "A staff member with this email already exists. Edit the existing staff member instead.");
+        }
         validateBusSelection(request, true);
         StaffEntity staff = mapToEntity(new StaffEntity(), request, true);
         StaffEntity saved = staffRepository.save(staff);

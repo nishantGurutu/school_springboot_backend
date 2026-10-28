@@ -23,6 +23,14 @@ public class FeeCollectionEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String section;
+    private Long feeTypeId;
+    private String feeType;
+    private Long discountId;
+    private String discount;
+    private String discountAmount;
+
+
     @Column(length = 32)
     private String admissionNo;
 

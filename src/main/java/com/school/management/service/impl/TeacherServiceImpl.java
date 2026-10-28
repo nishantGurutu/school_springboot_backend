@@ -166,28 +166,25 @@ public class TeacherServiceImpl implements TeacherService {
         String teacherEmail = saved.getEmail().trim();
         String teacherFullName = (saved.getFirstName() + (saved.getLastName() != null && !saved.getLastName().isBlank() ? " " + saved.getLastName().trim() : "")).trim();
 
-        try {
-            java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
-            if (existingUser.isEmpty()) {
-                userRepository.save(UserEntity.builder()
-                        .email(teacherEmail)
-                        .password(passwordEncoder.encode(rawPassword))
-                        .name(teacherFullName)
-                        .role(targetRole)
-                        .enabled(true)
-                        .build());
-            } else {
-                UserEntity user = existingUser.get();
-                if (user.getRole() != Role.ADMIN && user.getRole() != Role.MASTER_ADMIN && user.getRole() != Role.SUPER_ADMIN) {
-                    if (request.getPassword() != null && !request.getPassword().isBlank()) {
-                        user.setPassword(passwordEncoder.encode(rawPassword));
-                    }
-                    user.setName(teacherFullName);
-                    user.setRole(targetRole);
-                    userRepository.save(user);
+        java.util.Optional<UserEntity> existingUser = userRepository.findByEmailIgnoreCase(teacherEmail);
+        if (existingUser.isEmpty()) {
+            userRepository.save(UserEntity.builder()
+                    .email(teacherEmail)
+                    .password(passwordEncoder.encode(rawPassword))
+                    .name(teacherFullName)
+                    .role(targetRole)
+                    .enabled(true)
+                    .build());
+        } else {
+            UserEntity user = existingUser.get();
+            if (user.getRole() != Role.ADMIN && user.getRole() != Role.MASTER_ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+                if (request.getPassword() != null && !request.getPassword().isBlank()) {
+                    user.setPassword(passwordEncoder.encode(rawPassword));
                 }
+                user.setName(teacherFullName);
+                user.setRole(targetRole);
+                userRepository.save(user);
             }
-        } catch (Exception ignored) {
         }
 
         // If Principal, Staff, Accountant, Librarian, or Driver, also sync StaffEntity so it appears in Staff / HRM modules

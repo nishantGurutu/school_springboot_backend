@@ -9,6 +9,14 @@ import lombok.Getter;
 public class FeeCollectionResponse {
 
     private Long id;
+
+    private String section;
+    private Long feeTypeId;
+    private String feeType;
+    private Long discountId;
+    private String discount;
+    private String discountAmount;
+
     private String admissionNo;
     private String name;
     private String rollNo;
@@ -25,6 +33,8 @@ public class FeeCollectionResponse {
     public static FeeCollectionResponse fromEntity(FeeCollectionEntity entity) {
         return FeeCollectionResponse.builder()
                 .id(entity.getId())
+                .section(entity.getSection()).feeTypeId(entity.getFeeTypeId()).feeType(entity.getFeeType())
+                .discountId(entity.getDiscountId()).discount(entity.getDiscount()).discountAmount(entity.getDiscountAmount())
                 .admissionNo(entity.getAdmissionNo())
                 .name(entity.getName())
                 .rollNo(entity.getRollNo())

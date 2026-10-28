@@ -9,6 +9,8 @@ import java.util.Optional;
 @Repository
 public interface SchoolClassRepository extends JpaRepository<SchoolClassEntity, Long> {
 
+    java.util.List<SchoolClassEntity> findByNameIgnoreCase(String name);
+
     boolean existsByName(String name);
 
     boolean existsByNameAndSectionId(String name, Long sectionId);

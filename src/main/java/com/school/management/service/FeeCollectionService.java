@@ -19,6 +19,7 @@ public class FeeCollectionService {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final FeeCollectionRepository feeCollectionRepository;
+    private final FeeCollectionSelectionService selections;
 
     @Transactional(readOnly = true)
     public List<FeeCollectionResponse> getAll() {
@@ -29,7 +30,7 @@ public class FeeCollectionService {
 
     @Transactional
     public FeeCollectionResponse create(FeeCollectionRequest request) {
-        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        String name = request.getFeeTypeId() == null ? requireNonBlank(request.getName(), "Name is required").trim() : "";
 
         FeeCollectionEntity entity = FeeCollectionEntity.builder()
                 .admissionNo(request.getAdmissionNo() == null ? null : request.getAdmissionNo().trim())
@@ -46,13 +47,14 @@ public class FeeCollectionService {
                 .avatar(request.getAvatar())
                 .build();
 
+        selections.apply(entity, request);
         return FeeCollectionResponse.fromEntity(feeCollectionRepository.save(entity));
     }
 
     @Transactional
     public FeeCollectionResponse update(Long id, FeeCollectionRequest request) {
         FeeCollectionEntity entity = findByIdOrThrow(id);
-        String name = requireNonBlank(request.getName(), "Name is required").trim();
+        String name = request.getFeeTypeId() == null ? requireNonBlank(request.getName(), "Name is required").trim() : "";
 
         entity.setAdmissionNo(request.getAdmissionNo() == null ? entity.getAdmissionNo() : request.getAdmissionNo().trim());
         entity.setName(name);
@@ -67,6 +69,7 @@ public class FeeCollectionService {
         entity.setNote(request.getNote() == null ? entity.getNote() : request.getNote().trim());
         entity.setAvatar(request.getAvatar() == null ? entity.getAvatar() : request.getAvatar());
 
+        selections.apply(entity, request);
         return FeeCollectionResponse.fromEntity(feeCollectionRepository.save(entity));
     }
 

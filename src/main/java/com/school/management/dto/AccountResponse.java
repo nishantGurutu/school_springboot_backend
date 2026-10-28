@@ -10,6 +10,8 @@ public class AccountResponse {
 
     private Long id;
     private String transactionType;
+    private String name;
+    private String paymentType;
     private String category;
     private Double amount;
     private String description;
@@ -17,7 +19,7 @@ public class AccountResponse {
 
     public static AccountResponse fromEntity(AccountTransactionEntity transaction) {
         return AccountResponse.builder()
-                .id(transaction.getId())
+                .id(transaction.getId()).name(transaction.getName()).paymentType(transaction.getPaymentType())
                 .transactionType(transaction.getTransactionType())
                 .category(transaction.getCategory())
                 .amount(transaction.getAmount())

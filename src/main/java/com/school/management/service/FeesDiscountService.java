@@ -20,6 +20,7 @@ public class FeesDiscountService {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final FeesDiscountRepository feesDiscountRepository;
+    private final com.school.management.repository.FeesTypeRepository feesTypes;
 
     @Transactional(readOnly = true)
     public List<FeesDiscountResponse> getAll() {
@@ -43,6 +44,7 @@ public class FeesDiscountService {
                 .status(request.getStatus() == null ? "Active" : request.getStatus().trim())
                 .build();
 
+        validate(entity);
         return FeesDiscountResponse.fromEntity(feesDiscountRepository.save(entity));
     }
 
@@ -68,12 +70,40 @@ public class FeesDiscountService {
             entity.setStatus(request.getStatus().trim());
         }
 
+        validate(entity);
         return FeesDiscountResponse.fromEntity(feesDiscountRepository.save(entity));
     }
 
     @Transactional
     public void delete(Long id) {
         feesDiscountRepository.delete(findByIdOrThrow(id));
+    }
+
+    private void validate(FeesDiscountEntity entity) {
+        String scope = entity.getFeesType();
+        if (scope == null || scope.isBlank() || "All".equalsIgnoreCase(scope.trim())) entity.setFeesType("All");
+        else {
+            var names = java.util.Arrays.stream(scope.split(",")).map(String::trim).toList();
+            var activeTypes = feesTypes.findAll().stream().filter(t -> "Active".equalsIgnoreCase(t.getStatus())).toList();
+            if (names.stream().anyMatch(name -> activeTypes.stream().noneMatch(t -> t.getName().equalsIgnoreCase(name))))
+                throw new BadRequestException("Select an active applicable fee type or All fee types");
+            entity.setFeesType(String.join(", ", names));
+        }
+        String type = requireNonBlank(entity.getDiscountType(), "Discount type is required").trim();
+        if (!type.equals("Percentage") && !type.equals("Fixed Amount")) throw new BadRequestException("Select Percentage or Fixed Amount");
+        String raw = requireNonBlank(entity.getDiscountValue(), "Discount value is required").trim();
+        if (type.equals("Percentage") && raw.endsWith("%")) raw = raw.substring(0, raw.length()-1).trim();
+        java.math.BigDecimal value;
+        try { value = new java.math.BigDecimal(raw); } catch (Exception e) { throw new BadRequestException("Enter a valid discount value"); }
+        if (value.signum() < 0 || (type.equals("Percentage") && value.compareTo(new java.math.BigDecimal("100")) > 0))
+            throw new BadRequestException("Discount value must be non-negative; percentage cannot exceed 100");
+        if (value.scale() > 2) throw new BadRequestException("Discount value can have at most two decimal places");
+        entity.setDiscountType(type); entity.setDiscountValue(value.stripTrailingZeros().toPlainString());
+        String status = entity.getStatus();
+        if (status == null || status.isBlank()) entity.setStatus("Active");
+        else if (status.equalsIgnoreCase("Active")) entity.setStatus("Active");
+        else if (status.equalsIgnoreCase("Inactive")) entity.setStatus("Inactive");
+        else throw new BadRequestException("Select Active or Inactive status");
     }
 
     private FeesDiscountEntity findByIdOrThrow(Long id) {

@@ -23,6 +23,8 @@ public class AccountTransactionEntity {
 
     @Column(name = "transaction_type", nullable = false, length = 16)
     private String transactionType;
+    private String name;
+    private String paymentType;
 
     @Column(length = 64)
     private String category;

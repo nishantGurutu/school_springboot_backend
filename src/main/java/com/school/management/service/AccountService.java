@@ -54,12 +54,22 @@ public class AccountService {
     }
 
     @Transactional
+    public AccountResponse update(Long id, AccountRequest request) {
+        var entity = findByIdOrThrow(id);
+        if (!entity.getTransactionType().equalsIgnoreCase(request.getTransactionType())) throw new BadRequestException("Transaction type cannot be changed");
+        return AccountResponse.fromEntity(accountTransactionRepository.save(mapToEntity(entity, request)));
+    }
+
+    @Transactional
     public void delete(Long id) {
         AccountTransactionEntity transaction = findByIdOrThrow(id);
         accountTransactionRepository.delete(transaction);
     }
 
     private AccountTransactionEntity mapToEntity(AccountTransactionEntity e, AccountRequest r) {
+        if (r.getAmount() == null || !Double.isFinite(r.getAmount()) || r.getAmount() <= 0) throw new BadRequestException("Amount must be greater than zero");
+        e.setName(r.getName());
+        e.setPaymentType(r.getPaymentType());
         e.setCategory(r.getCategory());
         e.setAmount(r.getAmount());
         e.setDescription(r.getDescription());
