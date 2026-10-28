@@ -87,4 +87,21 @@ class AssignmentAccessTest {
         assertEquals(400, assertThrows(ResponseStatusException.class, () -> controller.reviewSubmission("hw_1", 5L, Map.of("status", "GRADED", "points", 21))).getStatusCode().value());
         verify(homeworkSubmissionRepository, never()).save(any());
     }
+    @Test void classPickerNormalizesLegacyParenthesesAndKeepsSectionScope() {
+        login(Role.TEACHER);
+        TeacherEntity teacher=TeacherEntity.builder().email("user@test.local").assignedClass("Play (Blue), KG - Green").subject("Math").build();
+        when(teacherRepository.findByEmailIgnoreCase("user@test.local")).thenReturn(Optional.of(teacher));
+        when(studentRepository.findByClassNameIgnoreCase(anyString())).thenReturn(List.of());
+        var classes=controller.getTeacherClasses().getBody();
+        assertEquals("Play",classes.get(0).get("className"));assertEquals("Blue",classes.get(0).get("section"));
+        assertEquals("KG",classes.get(1).get("className"));assertEquals("Green",classes.get(1).get("section"));
+        when(studentRepository.findByClassNameIgnoreCaseAndSectionIgnoreCase("Play","Blue")).thenReturn(List.of(StudentEntity.builder().id(42L).name("Asha").className("Play").section("Blue").build()));
+        assertEquals(42L,controller.getClassStudents("Play","Blue").getBody().get(0).get("id"));
+        assertEquals(403,assertThrows(ResponseStatusException.class,()->controller.getClassStudents("Play","Other")).getStatusCode().value());
+    }
+    @Test void studentCannotCreateExam() {
+        login(Role.STUDENT);
+        assertEquals(403,assertThrows(ResponseStatusException.class,()->controller.createExam(Map.of("subject","Math"))).getStatusCode().value());
+    }
+
 }

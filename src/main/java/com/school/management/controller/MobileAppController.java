@@ -72,14 +72,33 @@ public class MobileAppController {
         if (user.getRole() != Role.TEACHER) return;
         TeacherEntity teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "Teacher profile not linked"));
-        boolean assigned = teacher.getAssignedClasses().stream().anyMatch(c ->
-                c.getName().equalsIgnoreCase(className) &&
-                (c.getSection() == null || c.getSection().isBlank() || c.getSection().equalsIgnoreCase(section)));
-        if (!assigned && teacher.getAssignedClass() != null) {
-            assigned = Arrays.stream(teacher.getAssignedClass().split(",")).anyMatch(c ->
-                    c.trim().equalsIgnoreCase(className) || c.trim().equalsIgnoreCase(className + " - " + section));
-        }
+        boolean assigned = teacherTargets(teacher).stream().anyMatch(target ->
+                target.className().equalsIgnoreCase(className) &&
+                (target.section().isBlank() || target.section().equalsIgnoreCase(Objects.toString(section, ""))));
         if (!assigned) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class/section is not assigned to this teacher");
+    }
+
+    private record ClassTarget(String className, String section) {}
+
+    private ClassTarget parseClassTarget(String value) {
+        String text = value.trim();
+        var match = java.util.regex.Pattern.compile("^(.*)\\s+\\(([^()]+)\\)$").matcher(text);
+        if (match.matches()) return new ClassTarget(match.group(1).trim(), match.group(2).trim());
+        int separator = text.lastIndexOf(" - ");
+        return separator < 0 ? new ClassTarget(text, "") : new ClassTarget(text.substring(0, separator).trim(), text.substring(separator + 3).trim());
+    }
+
+    private Set<ClassTarget> teacherTargets(TeacherEntity teacher) {
+        Set<ClassTarget> targets = new LinkedHashSet<>();
+        if (teacher.getAssignedClasses() != null) for (SchoolClassEntity sc : teacher.getAssignedClasses()) {
+            String section = sc.getSection();
+            if ((section == null || section.isBlank()) && sc.getSectionId() != null)
+                section = sectionRepository.findById(sc.getSectionId()).map(SectionEntity::getName).orElse("");
+            targets.add(new ClassTarget(sc.getName(), Objects.toString(section, "")));
+        }
+        if (targets.isEmpty() && teacher.getAssignedClass() != null) Arrays.stream(teacher.getAssignedClass().split(","))
+                .filter(value -> !value.isBlank()).map(this::parseClassTarget).forEach(targets::add);
+        return targets;
     }
 
     private HomeworkEntity managedAssignment(String id) {
@@ -893,54 +912,21 @@ public class MobileAppController {
             teacher = teacherRepository.findByEmailIgnoreCase(user.getEmail()).orElse(null);
         }
 
-        Set<String> classNames = new LinkedHashSet<>();
-        if (teacher != null && teacher.getAssignedClasses() != null && !teacher.getAssignedClasses().isEmpty()) {
-            for (SchoolClassEntity sc : teacher.getAssignedClasses()) {
-                classNames.add(sc.getName() + (sc.getSection() != null ? " - " + sc.getSection() : ""));
-            }
-        } else if (teacher != null && teacher.getAssignedClass() != null && !teacher.getAssignedClass().isBlank()) {
-            String[] parts = teacher.getAssignedClass().split(",");
-            for (String p : parts) {
-                if (!p.trim().isEmpty()) classNames.add(p.trim());
-            }
+        Set<ClassTarget> targets = teacher == null ? new LinkedHashSet<>() : teacherTargets(teacher);
+        if (targets.isEmpty() && user.getRole() != Role.TEACHER) {
+            for (SchoolClassEntity sc : schoolClassRepository.findAll()) targets.add(new ClassTarget(sc.getName(), Objects.toString(sc.getSection(), "")));
         }
-
-        if (classNames.isEmpty() && user.getRole() != Role.TEACHER) {
-            List<SchoolClassEntity> scList = schoolClassRepository.findAll();
-            for (SchoolClassEntity sc : scList) {
-                classNames.add(sc.getName() + (sc.getSection() != null ? " - " + sc.getSection() : ""));
-            }
+        if (targets.isEmpty() && user.getRole() != Role.TEACHER) {
+            for (StudentEntity student : studentRepository.findAll()) if (student.getClassName() != null)
+                targets.add(new ClassTarget(student.getClassName(), Objects.toString(student.getSection(), "")));
         }
-
-        if (classNames.isEmpty() && user.getRole() != Role.TEACHER) {
-            List<StudentEntity> students = studentRepository.findAll();
-            for (StudentEntity s : students) {
-                if (s.getClassName() != null && !s.getClassName().isBlank()) {
-                    classNames.add(s.getClassName() + (s.getSection() != null && !s.getSection().isBlank() ? " - " + s.getSection() : ""));
-                }
-            }
-        }
-
         long idx = 1;
         String teacherSubject = teacher != null && teacher.getSubject() != null ? teacher.getSubject() : "All Subjects";
-        for (String cName : classNames) {
-            String tempBaseClass = cName;
-            String tempSection = "";
-            if (cName.contains("-")) {
-                String[] parts = cName.split("-");
-                tempBaseClass = parts[0].trim();
-                if (parts.length > 1) tempSection = parts[1].trim();
-            }
-            final String baseClass = tempBaseClass;
-            final String section = tempSection;
-
+        for (ClassTarget target : targets) {
+            String baseClass = target.className();
+            String section = target.section();
             long totalStudents = studentRepository.findByClassNameIgnoreCase(baseClass).stream()
-                    .filter(s -> section.isBlank() || section.equalsIgnoreCase(s.getSection()))
-                    .count();
-            if (totalStudents == 0) {
-                totalStudents = studentRepository.countByClassName(baseClass);
-            }
-
+                    .filter(student -> section.isBlank() || section.equalsIgnoreCase(student.getSection())).count();
             Map<String, Object> map = new HashMap<>();
             map.put("id", "cls_" + idx++);
             map.put("className", baseClass);
