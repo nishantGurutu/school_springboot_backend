@@ -66,6 +66,11 @@ public class JwtService {
         return "refresh".equals(type);
     }
 
+    public java.time.Instant expiresAt(String token) {
+        Date expiry = extractExpiration(token);
+        return expiry == null ? null : expiry.toInstant();
+    }
+
     public boolean isAccessToken(String token) {
         String type = extractClaim(token, claims -> claims.get("type", String.class));
         return "access".equals(type);

@@ -9,6 +9,7 @@ public class PortalNotificationEntity {
  @Column(length=12000) private String body;
  private String route;
  private String referenceId;
+ private Long chatMessageId;
  private java.time.LocalDateTime createdAt;
  private java.time.LocalDateTime readAt;
 }

@@ -22,7 +22,12 @@ class ChatAccessTest {
     @Mock TeacherRepository teachers;
     @Mock ChatMessageRepository messages;
     @org.mockito.Mock com.school.management.service.PortalNotificationService portalNotifications;
-    @InjectMocks ChatController controller;
+    ChatController controller;
+    @org.junit.jupiter.api.BeforeEach void setUp() {
+        controller = new ChatController(security,
+            new com.school.management.chat.ChatPolicy(security, users, students, guardians, teachers),
+            users, students, guardians, teachers, messages, portalNotifications);
+    }
     @Test void unrelatedStudentCannotMessageTeacher() {
         UserEntity student = UserEntity.builder().id(1L).role(Role.STUDENT).email("student@test.local").build();
         UserEntity teacher = UserEntity.builder().id(2L).role(Role.TEACHER).email("teacher@test.local").build();

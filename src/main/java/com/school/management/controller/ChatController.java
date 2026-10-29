@@ -23,6 +23,7 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class ChatController {
     private final SecurityUtil security;
+    private final com.school.management.chat.ChatPolicy chatPolicy;
     private final UserRepository users;
     private final StudentRepository students;
     private final GuardianRepository guardians;
@@ -49,16 +50,9 @@ public class ChatController {
                 c.trim().equalsIgnoreCase(student.getClassName()) || c.trim().equalsIgnoreCase(student.getClassName() + " - " + student.getSection()));
     }
     private boolean canContact(UserEntity viewer, UserEntity contact) {
-        if (Objects.equals(viewer.getId(), contact.getId()) || !contact.isEnabled()) return false;
-        UserEntity teacherUser = viewer.getRole() == Role.TEACHER ? viewer : contact.getRole() == Role.TEACHER ? contact : null;
-        if (teacherUser == null) return false;
-        UserEntity family = teacherUser == viewer ? contact : viewer;
-        TeacherEntity teacher = teachers.findByEmailIgnoreCase(teacherUser.getEmail()).orElse(null);
-        if (teacher == null) return false;
-        if (family.getRole() == Role.STUDENT) return students.findByEmailIgnoreCase(family.getEmail()).map(child -> teaches(teacher, child)).orElse(false);
-        if (family.getRole() == Role.PARENT) return children(family).stream().anyMatch(child -> teaches(teacher, child));
-        return false;
+        return chatPolicy.contact(viewer, contact);
     }
+
     @GetMapping("/channels")
     public List<Map<String,Object>> channels() {
         UserEntity viewer = viewer();

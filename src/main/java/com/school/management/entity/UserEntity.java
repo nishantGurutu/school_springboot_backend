@@ -27,6 +27,11 @@ public class UserEntity implements UserDetails {
     @Column(nullable = false, unique = true)
     private String email;
 
+    // Legacy accounts belong to one school until explicitly assigned server-side.
+    @Builder.Default
+    @Column(name = "school_id", nullable = false, columnDefinition = "varchar(255) default 'default-school'")
+    private String schoolId = "default-school";
+
     @Column(nullable = false)
     private String password;
 

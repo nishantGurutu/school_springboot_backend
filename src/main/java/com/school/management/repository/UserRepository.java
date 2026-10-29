@@ -10,6 +10,7 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<UserEntity, Long> {
 
+    java.util.List<UserEntity> findBySchoolIdAndEnabledTrue(String schoolId);
     Optional<UserEntity> findByEmail(String email);
 
     Optional<UserEntity> findByEmailIgnoreCase(String email);

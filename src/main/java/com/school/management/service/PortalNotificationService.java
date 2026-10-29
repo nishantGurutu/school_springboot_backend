@@ -21,9 +21,11 @@ public class PortalNotificationService {
  private final PushDeliveryRepository deliveries;
  private final UserRepository users;
  private final GuardianRepository guardians;
- @Transactional public void send(Long userId,String title,String body,String route,String reference) {
+ @Transactional public void send(Long userId,String title,String body,String route,String reference) {sendInternal(userId,title,body,route,reference,null);}
+ @Transactional public void sendChat(Long userId,String title,String body,String room,Long messageId) {sendInternal(userId,title,body,"chat",room,messageId);}
+ private void sendInternal(Long userId,String title,String body,String route,String reference,Long messageId) {
   if(userId==null) return;
-  PortalNotificationEntity notification=notifications.save(PortalNotificationEntity.builder().userId(userId).title(title).body(body).route(route).referenceId(reference).createdAt(LocalDateTime.now()).build());
+  PortalNotificationEntity notification=notifications.save(PortalNotificationEntity.builder().userId(userId).title(title).body(body).route(route).referenceId(reference).chatMessageId(messageId).createdAt(LocalDateTime.now()).build());
   devices.findByUserId(userId).forEach(device -> deliveries.save(PushDeliveryEntity.builder().deviceId(device.getId()).notificationId(notification.getId()).nextAttemptAt(java.time.Instant.now()).build()));
  }
  @Transactional public void family(StudentEntity student,String title,String body,String route,String reference) {

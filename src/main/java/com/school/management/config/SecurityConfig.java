@@ -43,6 +43,8 @@ public class SecurityConfig {
                                 "/swagger-ui.html")
                         .permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/chat/ws").permitAll()
+                        .requestMatchers("/api/chat/**").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/runtime-config").permitAll()
                         .requestMatchers("/api/admin/runtime-config").hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN")
                         .requestMatchers("/actuator/health").permitAll()

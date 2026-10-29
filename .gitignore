@@ -37,3 +37,6 @@ uploads/
 
 # Isolated Maven verification output (separate from IDE classes)
 target-verification/
+
+# Private chat attachments; use persistent volume/S3 in production
+private-chat-files/
