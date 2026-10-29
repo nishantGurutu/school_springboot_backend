@@ -984,6 +984,14 @@ public class MobileAppController {
             @RequestParam(required = false) String className,
             @RequestParam(required = false) Long subjectId) {
 
+        Set<String> assignedClasses = getTeacherClasses().getBody().stream()
+                .map(item -> Objects.toString(item.get("className"), "").trim().toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        if (className != null && !className.isBlank()
+                && !assignedClasses.contains(className.trim().toLowerCase(Locale.ROOT))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Class is not assigned to this teacher");
+        }
+
         List<SubjectChapterEntity> chapters;
         if (subjectId != null) {
             if (className != null && !className.isBlank()) {
@@ -999,6 +1007,7 @@ public class MobileAppController {
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (SubjectChapterEntity ch : chapters) {
+            if (!assignedClasses.contains(Objects.toString(ch.getClassName(), "").trim().toLowerCase(Locale.ROOT))) continue;
             List<SubjectTopicEntity> topics = subjectTopicRepository.findByChapterIdOrderByDisplayOrderAsc(ch.getId());
             Map<String, Object> map = new HashMap<>();
             map.put("id", ch.getId());
