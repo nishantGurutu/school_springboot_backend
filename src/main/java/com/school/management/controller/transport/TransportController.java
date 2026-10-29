@@ -23,7 +23,7 @@ public class TransportController {
 
     // Helper to resolve user email or fallback for dev/testing
     private String resolveEmail(UserDetails userDetails) {
-        return userDetails != null ? userDetails.getUsername() : "driver@school.com";
+        return userDetails != null ? userDetails.getUsername() : "";
     }
 
     // ==========================================

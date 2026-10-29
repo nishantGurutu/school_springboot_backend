@@ -1,10 +1,10 @@
 package com.school.management;
+import java.util.TimeZone;
 
-import jakarta.annotation.PostConstruct;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import java.util.TimeZone;
+import jakarta.annotation.PostConstruct;
 
 @SpringBootApplication
 public class SchoolManagementApplication {
@@ -18,5 +18,4 @@ public class SchoolManagementApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(SchoolManagementApplication.class, args);
 	}
-
 }

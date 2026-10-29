@@ -239,16 +239,6 @@ public class MobileAppController {
                 banners.add(bm);
             }
 
-            // 2. Subjects belong to the student's enrolled class.
-            List<Map<String, Object>> subjects = new ArrayList<>();
-            List<SubjectEntity> studentSubjects = new ArrayList<>();
-            if (student != null) {
-                studentSubjects = curriculumService.getStudentSubjects(student);
-            }
-            for (int i = 0; i < studentSubjects.size(); i++) {
-                subjects.add(mapSubjectEntityToDashboardMap(studentSubjects.get(i), i));
-            }
-
             // 3. Dynamic Upcoming Events from Database
             List<Map<String, Object>> events = new ArrayList<>();
             List<HolidayEntity> dbHolidays = holidayRepository.findAll();
@@ -299,7 +289,7 @@ public class MobileAppController {
             // Sections config (SDUI Feature flags)
             Map<String, Object> sectionsConfig = new HashMap<>();
             sectionsConfig.put("showBanners", true);
-            sectionsConfig.put("showSubjects", true);
+            sectionsConfig.put("showSubjects", false);
             sectionsConfig.put("showUpcomingEvents", true);
             sectionsConfig.put("showLatestNotices", true);
             sectionsConfig.put("showGallery", true);
@@ -310,7 +300,6 @@ public class MobileAppController {
             response.put("profile", profile);
             response.put("sectionsConfig", sectionsConfig);
             response.put("banners", banners);
-            response.put("subjects", subjects);
             response.put("upcomingEvents", events);
             response.put("latestNotices", notices);
             response.put("gallery", gallery);
@@ -383,7 +372,6 @@ public class MobileAppController {
             response.put("sectionsConfig", sectionsConfig);
             response.put("children", children);
             response.put("banners", Collections.emptyList());
-            response.put("subjects", Collections.emptyList());
             response.put("upcomingEvents", Collections.emptyList());
             response.put("latestNotices", Collections.emptyList());
             response.put("gallery", Collections.emptyList());
