@@ -14,6 +14,10 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity
 
     Optional<RefreshTokenEntity> findByToken(String token);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM RefreshTokenEntity r WHERE r.token = :token")
+    Optional<RefreshTokenEntity> findByTokenForUpdate(@Param("token") String token);
+
     @Modifying
     @Query("DELETE FROM RefreshTokenEntity r WHERE r.userId = :userId AND r.revoked = false")
     void revokeAllForUser(@Param("userId") Long userId);

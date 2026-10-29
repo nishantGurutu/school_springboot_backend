@@ -49,6 +49,7 @@ public class JwtService {
         claims.put("type", refresh ? "refresh" : "access");
         return Jwts.builder()
                 .setClaims(claims)
+                .setId(java.util.UUID.randomUUID().toString())
                 .setSubject(email)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expiration))

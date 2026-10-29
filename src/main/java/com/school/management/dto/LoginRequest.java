@@ -21,5 +21,13 @@ public class LoginRequest {
     @NotBlank(message = "Password is required")
     @Schema(description = "Account password", example = "password")
     private String password;
+
+    @Schema(description = "Optional Firebase Cloud Messaging device token for push notifications")
+    private String deviceToken;
+
+    public LoginRequest(String email, String password) {
+        this.email = email;
+        this.password = password;
+    }
 }
 

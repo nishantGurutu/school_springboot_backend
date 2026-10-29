@@ -33,6 +33,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final com.school.management.service.PushDeviceService pushDeviceService;
 
     @Override
     public AuthResponse login(LoginRequest request) {
@@ -56,6 +57,8 @@ public class AuthServiceImpl implements AuthService {
                 throw new UnauthorizedException("Invalid credentials");
             }
         }
+
+        pushDeviceService.register(user.getId(), request.getDeviceToken());
 
         TokenPair pair = jwtService.generateTokenPair(user.getEmail());
         saveRefreshToken(pair.refreshToken(), user.getId());
@@ -402,7 +405,6 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private void saveRefreshToken(String token, Long userId) {
-        refreshTokenRepository.revokeAllForUser(userId);
         refreshTokenRepository.deleteExpiredOrRevoked(LocalDateTime.now());
         RefreshTokenEntity entity = RefreshTokenEntity.builder()
                 .token(token)
@@ -414,7 +416,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public AuthResponse refreshToken(RefreshTokenRequest request) {
-        RefreshTokenEntity stored = refreshTokenRepository.findByToken(request.getRefreshToken())
+        RefreshTokenEntity stored = refreshTokenRepository.findByTokenForUpdate(request.getRefreshToken())
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
 
         if (stored.isRevoked()) {
@@ -424,7 +426,9 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Refresh token expired");
         }
 
-        jwtService.isRefreshToken(request.getRefreshToken());
+        if (!jwtService.isRefreshToken(request.getRefreshToken())) {
+            throw new UnauthorizedException("Invalid or expired refresh token");
+        }
         String email = jwtService.extractUsername(request.getRefreshToken());
         var user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
