@@ -35,6 +35,14 @@ class DashboardCorsTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("Access-Control-Allow-Origin", origin));
     }
+    @Test void eightKappaVercelLoginPreflightSucceeds() throws Exception {
+        String origin = "https://school-dashboard-eight-kappa.vercel.app";
+        mvc.perform(options("/api/auth/login").header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", origin));
+    }
     @Test void unauthorizedApiResponseStillIncludesCorsHeaders() throws Exception {
         mvc.perform(get("/api/student-reports").header("Origin",ORIGIN))
                 .andExpect(status().isUnauthorized()).andExpect(header().string("Access-Control-Allow-Origin",ORIGIN));
