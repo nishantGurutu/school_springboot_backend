@@ -11,7 +11,7 @@ import java.util.List;
 public class CorsConfig {
     @Bean
     public UrlBasedCorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,https://school-dashboard-one-sepia.vercel.app}") String allowedOrigins) {
+            @Value("${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,https://school-dashboard-one-sepia.vercel.app,https://school-dashboard-tawny-six.vercel.app}") String allowedOrigins) {
         CorsConfiguration cors = new CorsConfiguration();
         cors.setAllowedOrigins(Arrays.stream(allowedOrigins.split(",")).map(String::trim)
                 .filter(origin -> !origin.isEmpty()).distinct().toList());

@@ -20,6 +20,21 @@ class DashboardCorsTest {
                 .andExpect(header().string("Access-Control-Allow-Methods",containsString("POST")))
                 .andExpect(header().string("Access-Control-Allow-Credentials","true"));
     }
+    @Test void currentVercelDeploymentLoginPreflightSucceeds() throws Exception {
+        String origin = "https://school-dashboard-tawny-six.vercel.app";
+        mvc.perform(options("/api/auth/login").header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin", origin));
+    }
+    @Test void currentVercelInvalidLoginResponseIncludesCorsHeaders() throws Exception {
+        String origin = "https://school-dashboard-tawny-six.vercel.app";
+        mvc.perform(post("/api/auth/login").header("Origin", origin)
+                .contentType("application/json").content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string("Access-Control-Allow-Origin", origin));
+    }
     @Test void unauthorizedApiResponseStillIncludesCorsHeaders() throws Exception {
         mvc.perform(get("/api/student-reports").header("Origin",ORIGIN))
                 .andExpect(status().isUnauthorized()).andExpect(header().string("Access-Control-Allow-Origin",ORIGIN));
