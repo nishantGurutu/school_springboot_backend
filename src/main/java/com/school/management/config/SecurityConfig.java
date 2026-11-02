@@ -46,7 +46,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/chat/ws").permitAll()
                         .requestMatchers("/api/chat/**").authenticated()
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/runtime-config").permitAll()
-                        .requestMatchers("/api/admin/runtime-config").hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN", "ADMIN")
+                        .requestMatchers("/api/admin/runtime-config").hasAnyRole("MASTER_ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/api/health").permitAll()
 

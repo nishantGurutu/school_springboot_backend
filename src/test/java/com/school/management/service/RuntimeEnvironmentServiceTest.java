@@ -16,26 +16,29 @@ class RuntimeEnvironmentServiceTest {
         assertEquals("https://live.example/api", service.active().activeUrl());
         verify(repository, never()).saveAndFlush(any());
     }
-    @Test void savesOneEnvironmentAndBothNormalizedUrls() {
-        when(repository.findById(1L)).thenReturn(Optional.empty());
-        var saved = service.save(new RuntimeEnvironmentService.Configuration("development", "https://live.example/api/", "http://192.168.1.4:8080/"));
-        assertEquals("development", saved.environment());
-        assertEquals("http://192.168.1.4:8080/api", saved.developmentUrl());
-        verify(repository).saveAndFlush(argThat(v -> v.getId() == 1L && v.getEnvironment().equals("development") && v.getLiveUrl().equals("https://live.example/api")));
-    }
-    @Test void selectsPersistedDevelopmentAndThenLive() {
+    @Test void savesOnlyLiveAndPreservesLegacyDevelopmentUrl() {
         var entity = new RuntimeEnvironment();
-        entity.setLiveUrl("https://live.example/api"); entity.setDevelopmentUrl("http://192.168.1.4:8080/api");
+        entity.setDevelopmentUrl("http://legacy.example/api");
         entity.setEnvironment("development");
         when(repository.findById(1L)).thenReturn(Optional.of(entity));
-        assertEquals(entity.getDevelopmentUrl(), service.active().activeUrl());
-        entity.setEnvironment("live");
+        var saved = service.save(new RuntimeEnvironmentService.Configuration("https://new-live.example/"));
+        assertEquals("https://new-live.example/api", saved.liveUrl());
+        assertEquals("live", entity.getEnvironment());
+        assertEquals("http://legacy.example/api", entity.getDevelopmentUrl());
+        verify(repository).saveAndFlush(entity);
+    }
+    @Test void ignoresPersistedDevelopmentSelection() {
+        var entity = new RuntimeEnvironment();
+        entity.setLiveUrl("https://live.example/api");
+        entity.setDevelopmentUrl("http://legacy.example/api");
+        entity.setEnvironment("development");
+        when(repository.findById(1L)).thenReturn(Optional.of(entity));
+        assertEquals("live", service.active().environment());
         assertEquals(entity.getLiveUrl(), service.active().activeUrl());
     }
-    @Test void rejectsInvalidEnvironmentAndUrlsWithoutSaving() {
-        assertThrows(ResponseStatusException.class, () -> service.save(new RuntimeEnvironmentService.Configuration("both", "https://live.example", "http://dev.example")));
+    @Test void rejectsInvalidUrlsWithoutSaving() {
         for (String url : new String[]{"", "ftp://server", "https://user:pass@server", "https://server?x=1", "https://server#x", "localhost:8080"}) {
-            assertThrows(ResponseStatusException.class, () -> service.save(new RuntimeEnvironmentService.Configuration("live", url, "http://dev.example")));
+            assertThrows(ResponseStatusException.class, () -> service.save(new RuntimeEnvironmentService.Configuration(url)));
         }
         verify(repository, never()).saveAndFlush(any());
     }

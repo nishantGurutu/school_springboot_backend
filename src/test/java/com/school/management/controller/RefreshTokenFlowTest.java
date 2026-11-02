@@ -39,6 +39,22 @@ class RefreshTokenFlowTest {
         return json.readTree(mvc.perform(post("/api/auth/refresh").contentType("application/json").content(json.writeValueAsString(Map.of("refreshToken", token))))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
     }
+    @Test void onlySuperAdminCanReadOrChangeLiveSettings() throws Exception {
+        createUser();
+        var session = login();
+        String token = session.get("accessToken").asText();
+        mvc.perform(get("/api/admin/runtime-config").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/admin/runtime-config").header("Authorization", "Bearer " + token)
+            .contentType("application/json").content("{\"liveUrl\":\"https://new.example/api\"}")).andExpect(status().isForbidden());
+        var user = users.findByEmail(email).orElseThrow();
+        user.setRole(Role.MASTER_ADMIN); users.saveAndFlush(user);
+        token = login().get("accessToken").asText();
+        mvc.perform(put("/api/admin/runtime-config").header("Authorization", "Bearer " + token)
+            .contentType("application/json").content("{\"liveUrl\":\"https://new.example/api\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.liveUrl").value("https://new.example/api"));
+        mvc.perform(get("/api/runtime-config")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.environment").value("live")).andExpect(jsonPath("$.activeUrl").value("https://new.example/api"));
+    }
     @Test void dashboardAndPhoneSessionsRefreshIndependentlyAndRotatedTokensCannotBeReused() throws Exception {
         createUser();
         var dashboard = login(); var phone = login();
@@ -46,16 +62,16 @@ class RefreshTokenFlowTest {
         var refreshed = refresh(dashboard.get("refreshToken").asText());
         refresh(phone.get("refreshToken").asText());
         assertNotEquals(dashboard.get("accessToken"), refreshed.get("accessToken"));
-        mvc.perform(get("/api/admin/runtime-config").header("Authorization", "Bearer " + refreshed.get("accessToken").asText())).andExpect(status().isOk());
+        mvc.perform(get("/api/admin/stats").header("Authorization", "Bearer " + refreshed.get("accessToken").asText())).andExpect(status().isOk());
         mvc.perform(post("/api/auth/refresh").contentType("application/json").content(json.writeValueAsString(Map.of("refreshToken", dashboard.get("refreshToken").asText())))).andExpect(status().isUnauthorized());
     }
     @Test void expiredAccessGets401ThenRefreshProvidesUsableAccessAndExpiredRefreshIsRejected() throws Exception {
         createUser(); var session = login();
-        mvc.perform(get("/api/admin/runtime-config").header("Authorization", "Bearer " + io.jsonwebtoken.Jwts.builder().setSubject(email).claim("type", "access")
+        mvc.perform(get("/api/admin/stats").header("Authorization", "Bearer " + io.jsonwebtoken.Jwts.builder().setSubject(email).claim("type", "access")
             .setExpiration(new java.util.Date(System.currentTimeMillis() - 60000))
             .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor("test-secret-key-for-unit-tests-only-long-enough".getBytes(java.nio.charset.StandardCharsets.UTF_8)), io.jsonwebtoken.SignatureAlgorithm.HS256).compact())).andExpect(status().isUnauthorized());
         var refreshed = refresh(session.get("refreshToken").asText());
-        mvc.perform(get("/api/admin/runtime-config").header("Authorization", "Bearer " + refreshed.get("accessToken").asText())).andExpect(status().isOk());
+        mvc.perform(get("/api/admin/stats").header("Authorization", "Bearer " + refreshed.get("accessToken").asText())).andExpect(status().isOk());
         var row = tokens.findByToken(refreshed.get("refreshToken").asText()).orElseThrow();
         row.setExpiryDate(LocalDateTime.now().minusMinutes(1)); tokens.saveAndFlush(row);
         mvc.perform(post("/api/auth/refresh").contentType("application/json").content(json.writeValueAsString(Map.of("refreshToken", row.getToken())))).andExpect(status().isUnauthorized());

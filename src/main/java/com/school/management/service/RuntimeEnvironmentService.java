@@ -14,7 +14,7 @@ public class RuntimeEnvironmentService {
     private final RuntimeEnvironmentRepository repository;
     private final String liveDefault;
     private final String developmentDefault;
-    public record Configuration(String environment, String liveUrl, String developmentUrl) {}
+    public record Configuration(String liveUrl) {}
     public record Active(String environment, String activeUrl) {}
     public RuntimeEnvironmentService(RuntimeEnvironmentRepository repository,
         @Value("${app.runtime.live-url:https://school-springboot-backend.onrender.com/api}") String live,
@@ -22,22 +22,24 @@ public class RuntimeEnvironmentService {
         this.repository = repository; this.liveDefault = live; this.developmentDefault = development;
     }
     public Configuration read() {
-        return repository.findById(1L).map(v -> new Configuration(v.getEnvironment(), v.getLiveUrl(), v.getDevelopmentUrl()))
-            .orElseGet(() -> new Configuration("live", normalize(liveDefault), normalize(developmentDefault)));
+        return new Configuration(repository.findById(1L).map(RuntimeEnvironment::getLiveUrl)
+            .orElseGet(() -> normalize(liveDefault)));
     }
     public Active active() {
-        var c = read();
-        return new Active(c.environment(), "live".equals(c.environment()) ? c.liveUrl() : c.developmentUrl());
+        // Development selection belongs to each client's build configuration.
+        return new Active("live", read().liveUrl());
     }
     @Transactional
     public Configuration save(Configuration c) {
-        if (c == null || !("live".equals(c.environment()) || "development".equals(c.environment())))
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Select live or development");
-        String live = normalize(c.liveUrl()), dev = normalize(c.developmentUrl());
+        if (c == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Enter a live URL");
+        String live = normalize(c.liveUrl());
         var entity = repository.findById(1L).orElseGet(RuntimeEnvironment::new);
-        entity.setEnvironment(c.environment()); entity.setLiveUrl(live); entity.setDevelopmentUrl(dev);
+        entity.setEnvironment("live");
+        entity.setLiveUrl(live);
+        // Retain the legacy column for schema compatibility; clients never use it.
+        if (entity.getDevelopmentUrl() == null) entity.setDevelopmentUrl(normalize(developmentDefault));
         repository.saveAndFlush(entity);
-        return new Configuration(c.environment(), live, dev);
+        return new Configuration(live);
     }
     static String normalize(String value) {
         try {
