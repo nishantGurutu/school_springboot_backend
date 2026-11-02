@@ -26,7 +26,6 @@ public class StudentRequest {
     @Size(max = 20, message = "Roll number must be at most 20 characters")
     private String rollNumber;
 
-    @NotBlank(message = "Admission number is required")
     @Size(max = 32, message = "Admission number must be at most 32 characters")
     private String admissionNo;
 

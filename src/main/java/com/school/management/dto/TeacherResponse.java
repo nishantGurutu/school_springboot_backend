@@ -71,6 +71,7 @@ public class TeacherResponse {
     private String ifscCode;
     private String nationalIdNumber;
     private String docName;
+    private String docFile;
     private String prevSchoolName;
     private String prevSchoolAddress;
     private String permanentAddress;
@@ -123,6 +124,7 @@ public class TeacherResponse {
         res.setIfscCode(teacher.getIfscCode());
         res.setNationalIdNumber(teacher.getNationalIdNumber());
         res.setDocName(teacher.getDocName());
+        res.setDocFile(teacher.getDocFile());
         res.setPrevSchoolName(teacher.getPrevSchoolName());
         res.setPrevSchoolAddress(teacher.getPrevSchoolAddress());
         res.setPermanentAddress(teacher.getPermanentAddress());

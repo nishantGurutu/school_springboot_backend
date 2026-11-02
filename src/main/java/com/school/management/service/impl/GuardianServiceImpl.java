@@ -56,6 +56,7 @@ public class GuardianServiceImpl implements GuardianService {
                 .email(email)
                 .address(request.getAddress())
                 .photo(request.getPhoto())
+                .docFile(request.getDocFile())
                 .feeStatus(request.getFeeStatus() == null ? "Clear" : request.getFeeStatus())
                 .studentAdmissionNo(request.getStudentAdmissionNo())
                 .build();
@@ -136,6 +137,7 @@ public class GuardianServiceImpl implements GuardianService {
         guardian.setEmail(email);
         guardian.setAddress(request.getAddress());
         guardian.setPhoto(request.getPhoto());
+        guardian.setDocFile(request.getDocFile());
         if (request.getFeeStatus() != null) {
             guardian.setFeeStatus(request.getFeeStatus());
         }
@@ -166,12 +168,13 @@ public class GuardianServiceImpl implements GuardianService {
 
     private void validateStudentRef(String admissionNo) {
         if (admissionNo == null || admissionNo.isBlank()) {
-            return;
+            throw new BadRequestException("Select a child / student");
         }
-        String[] parts = admissionNo.split(",");
+        String[] parts = admissionNo.split(",", -1);
         for (String part : parts) {
             String adm = part.trim();
-            if (!adm.isEmpty() && studentRepository.findByAdmissionNo(adm).isEmpty() && studentRepository.findByAdmissionNoIgnoreCase(adm).isEmpty()) {
+            if (adm.isEmpty()) throw new BadRequestException("Select a valid child / student");
+            if (studentRepository.findByAdmissionNo(adm).isEmpty() && studentRepository.findByAdmissionNoIgnoreCase(adm).isEmpty()) {
                 throw new BadRequestException("No student found with admission number '" + adm + "'");
             }
         }

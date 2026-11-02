@@ -98,6 +98,9 @@ public class TeacherRequest {
     private String ifscCode;
     private String nationalIdNumber;
     private String docName;
+
+    @Size(max = 255, message = "Document URL must be at most 255 characters")
+    private String docFile;
     private String prevSchoolName;
     private String prevSchoolAddress;
     private String permanentAddress;

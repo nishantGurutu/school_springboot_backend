@@ -163,6 +163,9 @@ public class TeacherEntity {
     @Column(name = "doc_name", length = 128)
     private String docName;
 
+    @Column(name = "doc_file", length = 255)
+    private String docFile;
+
     @Column(name = "prev_school_name", length = 128)
     private String prevSchoolName;
 

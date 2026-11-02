@@ -46,6 +46,13 @@ public class StudentServiceImpl implements StudentService {
     @Override
     @Transactional
     public StudentResponse create(StudentRequest request) {
+        // A stable internal admission reference is still needed for guardians,
+        // fees and reports when the optional form field is left blank.
+        if (request.getAdmissionNo() == null || request.getAdmissionNo().isBlank()) {
+            request.setAdmissionNo("ADM-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        } else {
+            request.setAdmissionNo(request.getAdmissionNo().trim());
+        }
         if (studentRepository.existsByAdmissionNo(request.getAdmissionNo())) {
             throw new DuplicateResourceException(
                     "Student with admission number '" + request.getAdmissionNo() + "' already exists");
@@ -366,9 +373,15 @@ public class StudentServiceImpl implements StudentService {
             }
         }
 
+        String guardianPhoto = student.getGuardianPhoto();
+        if (guardianPhoto == null || guardianPhoto.isBlank()) {
+            guardianPhoto = gType == GuardianType.FATHER ? student.getFatherPhoto()
+                    : gType == GuardianType.MOTHER ? student.getMotherPhoto() : null;
+        }
         if (gOpt.isEmpty()) {
             GuardianEntity newGuardian = GuardianEntity.builder()
                     .guardianType(gType)
+                    .photo(guardianPhoto)
                     .name(gName)
                     .phone(student.getGuardianPhone())
                     .email(gEmail)
@@ -380,6 +393,7 @@ public class StudentServiceImpl implements StudentService {
             guardianRepository.save(newGuardian);
         } else {
             GuardianEntity existing = gOpt.get();
+            if (guardianPhoto != null && !guardianPhoto.isBlank()) existing.setPhoto(guardianPhoto);
             if (existing.getName() == null || existing.getName().isBlank()) {
                 existing.setName(gName);
             }

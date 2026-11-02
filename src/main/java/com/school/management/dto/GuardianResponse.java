@@ -25,6 +25,7 @@ public class GuardianResponse {
     // --- Full details ---
     private String guardianType;
     private String photo;
+    private String docFile;
     private String studentAdmissionNo;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -46,6 +47,7 @@ public class GuardianResponse {
                 .feeStatus(g.getFeeStatus())
                 .guardianType(g.getGuardianType() == null ? null : g.getGuardianType().name())
                 .photo(g.getPhoto())
+                .docFile(g.getDocFile())
                 .studentAdmissionNo(g.getStudentAdmissionNo())
                 .createdAt(g.getCreatedAt())
                 .updatedAt(g.getUpdatedAt())

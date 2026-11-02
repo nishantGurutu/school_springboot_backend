@@ -45,6 +45,9 @@ public class GuardianEntity {
     @Column(length = 255)
     private String photo;
 
+    @Column(name = "doc_file", length = 255)
+    private String docFile;
+
     @Builder.Default
     @Column(length = 20)
     private String feeStatus = "Clear";

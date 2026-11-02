@@ -34,11 +34,15 @@ public class GuardianRequest {
     @Size(max = 255, message = "Photo value too long")
     private String photo;
 
+    @Size(max = 255, message = "Document URL must be at most 255 characters")
+    private String docFile;
+
     @Size(max = 20, message = "Fee status must be at most 20 characters")
     private String feeStatus;
 
-    // Link to the ward's student admission number (optional)
+    // Every guardian must be linked to an existing student.
     @Size(max = 32, message = "Student admission number must be at most 32 characters")
+    @NotBlank(message = "Select a child / student")
     private String studentAdmissionNo;
 
     // Optional login credentials for the parent (creates a PARENT user)

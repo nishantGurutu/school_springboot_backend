@@ -152,6 +152,7 @@ public class TeacherServiceImpl implements TeacherService {
                 .ifscCode(request.getIfscCode())
                 .nationalIdNumber(request.getNationalIdNumber())
                 .docName(request.getDocName())
+                .docFile(request.getDocFile())
                 .prevSchoolName(request.getPrevSchoolName())
                 .prevSchoolAddress(request.getPrevSchoolAddress())
                 .permanentAddress(request.getPermanentAddress())
@@ -370,6 +371,7 @@ public class TeacherServiceImpl implements TeacherService {
         if (request.getIfscCode() != null) teacher.setIfscCode(request.getIfscCode());
         if (request.getNationalIdNumber() != null) teacher.setNationalIdNumber(request.getNationalIdNumber());
         if (request.getDocName() != null) teacher.setDocName(request.getDocName());
+        if (request.getDocFile() != null) teacher.setDocFile(request.getDocFile());
         if (request.getPrevSchoolName() != null) teacher.setPrevSchoolName(request.getPrevSchoolName());
         if (request.getPrevSchoolAddress() != null) teacher.setPrevSchoolAddress(request.getPrevSchoolAddress());
         if (request.getPermanentAddress() != null) teacher.setPermanentAddress(request.getPermanentAddress());
