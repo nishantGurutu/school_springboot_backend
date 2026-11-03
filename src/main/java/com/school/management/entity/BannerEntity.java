@@ -56,6 +56,10 @@ public class BannerEntity {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    public String getImageUrl() {
+        return GalleryAlbumEntity.mediaPath(imageUrl);
+    }
+
     @PrePersist
     void prePersist() {
         createdAt = LocalDateTime.now();

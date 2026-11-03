@@ -229,13 +229,8 @@ public class MobileAppController {
             for (BannerEntity b : dbBanners) {
                 Map<String, Object> bm = new HashMap<>();
                 bm.put("id", b.getId());
-                bm.put("title", b.getTitle());
-                bm.put("subtitle", b.getSubtitle() != null ? b.getSubtitle() : "");
-                bm.put("badge", b.getBadge() != null ? b.getBadge() : "");
-                bm.put("buttonText", b.getButtonText() != null ? b.getButtonText() : "Learn More");
-                bm.put("websiteUrl", b.getWebsiteUrl() != null ? b.getWebsiteUrl() : "");
-                bm.put("imageUrl", b.getImageUrl() != null ? b.getImageUrl() : "");
-                bm.put("bgColorHex", b.getBgColorHex() != null ? b.getBgColorHex() : "#EAB308");
+                if (b.getImageUrl() == null || b.getImageUrl().isBlank()) continue;
+                bm.put("imageUrl", b.getImageUrl());
                 banners.add(bm);
             }
 
@@ -270,21 +265,9 @@ public class MobileAppController {
                 notices.add(n);
             }
 
-            // 5. Dynamic School Gallery Albums from Database (Top 4 albums added from Dashboard)
-            List<Map<String, Object>> gallery = new ArrayList<>();
-            List<GalleryAlbumEntity> dbAlbums = galleryAlbumRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active");
-            if (dbAlbums.isEmpty()) {
-                dbAlbums = galleryAlbumRepository.findAllByOrderByIdDesc();
-            }
-            for (int i = 0; i < Math.min(dbAlbums.size(), 4); i++) {
-                GalleryAlbumEntity g = dbAlbums.get(i);
-                Map<String, Object> gm = new HashMap<>();
-                gm.put("id", g.getId());
-                gm.put("title", g.getTitle());
-                gm.put("photoCount", g.getPhotoCount() != null ? g.getPhotoCount() : 1);
-                gm.put("coverImage", g.getCoverImage() != null ? g.getCoverImage() : "");
-                gallery.add(gm);
-            }
+            // One item per photo; upload batches are not exposed as nested albums.
+            List<Map<String, Object>> gallery = com.school.management.service.GalleryAlbumService.flattenPhotos(
+                    galleryAlbumRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active"));
 
             // Sections config (SDUI Feature flags)
             Map<String, Object> sectionsConfig = new HashMap<>();

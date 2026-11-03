@@ -43,6 +43,12 @@ public class BannerController {
         return ResponseEntity.status(HttpStatus.CREATED).body(bannerService.create(banner));
     }
 
+    @PostMapping("/bulk")
+    @Operation(summary = "Save multiple banner images as a flat list")
+    public ResponseEntity<List<BannerEntity>> createBanners(@RequestBody List<String> imageUrls) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(bannerService.createMany(imageUrls));
+    }
+
     @PutMapping("/{id}")
     @Operation(summary = "Update promotional banner")
     public ResponseEntity<BannerEntity> updateBanner(@PathVariable Long id, @RequestBody BannerEntity banner) {

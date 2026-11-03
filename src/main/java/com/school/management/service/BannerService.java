@@ -44,6 +44,23 @@ public class BannerService {
         return bannerRepository.save(banner);
     }
 
+    public List<BannerEntity> createMany(List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty() || imageUrls.stream().anyMatch(url -> url == null || url.isBlank())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Select at least one valid banner image");
+        }
+        int nextOrder = bannerRepository.findAllByOrderByDisplayOrderAsc().stream()
+                .map(BannerEntity::getDisplayOrder).filter(java.util.Objects::nonNull)
+                .max(Integer::compareTo).orElse(0) + 1;
+        List<BannerEntity> banners = new java.util.ArrayList<>();
+        for (String imageUrl : imageUrls) {
+            banners.add(BannerEntity.builder().title("School Banner").status("Active")
+                    .imageUrl(com.school.management.entity.GalleryAlbumEntity.mediaPath(imageUrl))
+                    .displayOrder(nextOrder++).build());
+        }
+        return bannerRepository.saveAll(banners);
+    }
+
     public BannerEntity update(Long id, BannerEntity banner) {
         BannerEntity existing = getById(id);
         if (banner.getTitle() != null && !banner.getTitle().isBlank()) existing.setTitle(banner.getTitle());

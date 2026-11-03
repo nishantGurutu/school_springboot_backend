@@ -26,9 +26,9 @@ public class GalleryAlbumController {
     }
 
     @GetMapping("/active")
-    @Operation(summary = "Get only active gallery albums")
-    public ResponseEntity<List<GalleryAlbumEntity>> getActiveAlbums() {
-        return ResponseEntity.ok(galleryAlbumService.getActiveAlbums());
+    @Operation(summary = "Get active gallery photos as a flat list")
+    public ResponseEntity<List<java.util.Map<String, Object>>> getActiveAlbums() {
+        return ResponseEntity.ok(galleryAlbumService.getActivePhotos());
     }
 
     @GetMapping("/{id}")

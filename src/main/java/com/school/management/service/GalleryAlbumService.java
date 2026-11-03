@@ -25,7 +25,29 @@ public class GalleryAlbumService {
 
     @Transactional(readOnly = true)
     public List<GalleryAlbumEntity> getActiveAlbums() {
-        return galleryAlbumRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active");
+        return galleryAlbumRepository.findByStatusIgnoreCaseOrderByDisplayOrderAsc("Active").stream()
+                .filter(GalleryAlbumEntity::hasPhotos).toList();
+    }
+
+    public static List<java.util.Map<String, Object>> flattenPhotos(List<GalleryAlbumEntity> albums) {
+        List<java.util.Map<String, Object>> photos = new java.util.ArrayList<>();
+        for (GalleryAlbumEntity album : albums) {
+            List<String> urls = album.getImages();
+            if (urls == null || urls.isEmpty()) {
+                urls = album.getCoverImage() == null ? List.of() : List.of(album.getCoverImage());
+            }
+            for (int index = 0; index < urls.size(); index++) {
+                String url = urls.get(index);
+                if (url == null || url.isBlank()) continue;
+                photos.add(java.util.Map.of("id", album.getId() + "-" + index, "imageUrl", url));
+            }
+        }
+        return photos;
+    }
+
+    @Transactional(readOnly = true)
+    public List<java.util.Map<String, Object>> getActivePhotos() {
+        return flattenPhotos(getActiveAlbums());
     }
 
     @Transactional(readOnly = true)
@@ -44,6 +66,7 @@ public class GalleryAlbumService {
         if (album.getPhotoCount() == null || album.getPhotoCount() < 1) {
             album.setPhotoCount(1);
         }
+        syncImages(album);
         return galleryAlbumRepository.save(album);
     }
 
@@ -61,7 +84,25 @@ public class GalleryAlbumService {
             existing.setStatus(album.getStatus());
         if (album.getDisplayOrder() != null)
             existing.setDisplayOrder(album.getDisplayOrder());
+        if (album.getImages() != null) {
+            existing.setImages(new java.util.ArrayList<>(album.getImages()));
+        }
+        syncImages(existing);
         return galleryAlbumRepository.save(existing);
+    }
+
+    private void syncImages(GalleryAlbumEntity album) {
+        if (album.getImages() == null) {
+            if (album.hasPhotos()) return; // Preserve legacy cover-only albums.
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Select at least one valid image");
+        }
+        if (album.getImages().isEmpty() || album.getImages().stream().anyMatch(url -> url == null || url.isBlank())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Select at least one valid image");
+        }
+        album.setCoverImage(album.getImages().get(0));
+        album.setPhotoCount(album.getImages().size());
     }
 
     public void delete(Long id) {
