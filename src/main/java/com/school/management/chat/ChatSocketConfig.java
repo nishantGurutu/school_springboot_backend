@@ -12,7 +12,7 @@ import java.util.*;
 public class ChatSocketConfig implements WebSocketMessageBrokerConfigurer {
  private final ChatSocketGuard guard;
  private final ChatSocketSessions sessions;
- @Value("${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,https://school-dashboard-one-sepia.vercel.app}") private String origins;
+ @Value("${app.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,https://school-dashboard-one-sepia.vercel.app,https://school-dashboard-lovat.vercel.app}") private String origins;
  @org.springframework.context.annotation.Bean(name="taskScheduler")
  public org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler chatBrokerScheduler(){var scheduler=new org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler();scheduler.setPoolSize(4);scheduler.setThreadNamePrefix("chat-heartbeat-");return scheduler;}
  @Override public void registerStompEndpoints(StompEndpointRegistry registry){registry.addEndpoint("/api/chat/ws").setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).toArray(String[]::new));}

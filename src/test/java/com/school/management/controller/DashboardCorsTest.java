@@ -36,7 +36,7 @@ class DashboardCorsTest {
                 .andExpect(header().string("Access-Control-Allow-Origin", origin));
     }
     @Test void eightKappaVercelLoginPreflightSucceeds() throws Exception {
-        String origin = "https://school-dashboard-eight-kappa.vercel.app";
+        String origin = "https://school-dashboard-lovat.vercel.app";
         mvc.perform(options("/api/auth/login").header("Origin", origin)
                 .header("Access-Control-Request-Method", "POST")
                 .header("Access-Control-Request-Headers", "content-type"))
